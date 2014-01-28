@@ -1,6 +1,4 @@
-"""
-Module with tests for slides.py
-"""
+"""Tests for SlidesExporter"""
 
 #-----------------------------------------------------------------------------
 # Copyright (c) 2013, the IPython Development Team.
@@ -23,7 +21,10 @@ from IPython.testing.decorators import onlyif_cmds_exist
 #-----------------------------------------------------------------------------
 
 class TestSlidesExporter(ExportersTestsBase):
-    """Contains test functions for slides.py"""
+    """Tests for SlidesExporter"""
+
+    exporter_class = SlidesExporter
+    should_include_raw = ['html']
 
     def test_constructor(self):
         """
@@ -46,5 +47,5 @@ class TestSlidesExporter(ExportersTestsBase):
         """
         Can a SlidesExporter export using the 'reveal' template?
         """
-        (output, resources) = SlidesExporter(template_file='reveal').from_filename(self._get_notebook())
+        (output, resources) = SlidesExporter(template_file='slides_reveal').from_filename(self._get_notebook())
         assert len(output) > 0

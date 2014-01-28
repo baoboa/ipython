@@ -9,6 +9,7 @@ Authors:
 * MinRK
 
 """
+from __future__ import print_function
 
 #-----------------------------------------------------------------------------
 #  Copyright (C) 2008-2011  The IPython Development Team
@@ -37,6 +38,7 @@ from IPython.core.application import BaseIPythonApplication
 from IPython.core.profiledir import ProfileDir
 from IPython.utils.daemonize import daemonize
 from IPython.utils.importstring import import_item
+from IPython.utils.py3compat import string_types
 from IPython.utils.sysinfo import num_cpus
 from IPython.utils.traitlets import (Integer, Unicode, Bool, CFloat, Dict, List, Any,
                                         DottedObjectName)
@@ -257,7 +259,7 @@ class IPClusterEngines(BaseParallelApplication):
 
     engine_launcher = Any(config=True, help="Deprecated, use engine_launcher_class")
     def _engine_launcher_changed(self, name, old, new):
-        if isinstance(new, basestring):
+        if isinstance(new, string_types):
             self.log.warn("WARNING: %s.engine_launcher is deprecated as of 0.12,"
                     " use engine_launcher_class" % self.__class__.__name__)
             self.engine_launcher_class = new
@@ -399,10 +401,8 @@ class IPClusterEngines(BaseParallelApplication):
         if self.clean_logs:
             log_dir = self.profile_dir.log_dir
             for f in os.listdir(log_dir):
-                if re.match(r'ip(engine|controller)z-\d+\.(log|err|out)',f):
+                if re.match(r'ip(engine|controller)-.+\.(log|err|out)',f):
                     os.remove(os.path.join(log_dir, f))
-        # This will remove old log files for ipcluster itself
-        # super(IPBaseParallelApplication, self).start_logging()
 
     def start(self):
         """Start the app for the engines subcommand."""
@@ -461,7 +461,7 @@ class IPClusterStart(IPClusterEngines):
 
     controller_launcher = Any(config=True, help="Deprecated, use controller_launcher_class")
     def _controller_launcher_changed(self, name, old, new):
-        if isinstance(new, basestring):
+        if isinstance(new, string_types):
             # old 0.11-style config
             self.log.warn("WARNING: %s.controller_launcher is deprecated as of 0.12,"
                     " use controller_launcher_class" % self.__class__.__name__)
@@ -595,8 +595,8 @@ class IPClusterApp(BaseIPythonApplication):
 
     def start(self):
         if self.subapp is None:
-            print "No subcommand specified. Must specify one of: %s"%(self.subcommands.keys())
-            print
+            print("No subcommand specified. Must specify one of: %s"%(self.subcommands.keys()))
+            print()
             self.print_description()
             self.print_subcommands()
             self.exit(1)

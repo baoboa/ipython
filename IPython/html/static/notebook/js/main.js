@@ -46,16 +46,25 @@ function (marked) {
     $('#ipython-main-app').addClass('border-box-sizing');
     $('div#notebook_panel').addClass('border-box-sizing');
 
-    var baseProjectUrl = $('body').data('baseProjectUrl')
+    var baseProjectUrl = $('body').data('baseProjectUrl');
+    var notebookPath = $('body').data('notebookPath');
+    var notebookName = $('body').data('notebookName');
+    notebookName = decodeURIComponent(notebookName);
+    notebookPath = decodeURIComponent(notebookPath);
+    console.log(notebookName);
+    if (notebookPath == 'None'){
+        notebookPath = "";
+    }
 
     IPython.page = new IPython.Page();
     IPython.layout_manager = new IPython.LayoutManager();
     IPython.pager = new IPython.Pager('div#pager', 'div#pager_splitter');
     IPython.quick_help = new IPython.QuickHelp();
     IPython.login_widget = new IPython.LoginWidget('span#login_widget',{baseProjectUrl:baseProjectUrl});
-    IPython.notebook = new IPython.Notebook('div#notebook',{baseProjectUrl:baseProjectUrl});
+    IPython.notebook = new IPython.Notebook('div#notebook',{baseProjectUrl:baseProjectUrl, notebookPath:notebookPath, notebookName:notebookName});
+    IPython.keyboard_manager = new IPython.KeyboardManager();
     IPython.save_widget = new IPython.SaveWidget('span#save_widget');
-    IPython.menubar = new IPython.MenuBar('#menubar',{baseProjectUrl:baseProjectUrl})
+    IPython.menubar = new IPython.MenuBar('#menubar',{baseProjectUrl:baseProjectUrl, notebookPath: notebookPath})
     IPython.toolbar = new IPython.MainToolBar('#maintoolbar-container')
     IPython.tooltip = new IPython.Tooltip()
     IPython.notification_area = new IPython.NotificationArea('#notification_area')
@@ -88,10 +97,10 @@ function (marked) {
         // only do this once
         $([IPython.events]).off('notebook_loaded.Notebook', first_load);
     };
-
+    
     $([IPython.events]).on('notebook_loaded.Notebook', first_load);
     $([IPython.events]).trigger('app_initialized.NotebookApp');
-    IPython.notebook.load_notebook($('body').data('notebookId'));
+    IPython.notebook.load_notebook(notebookName, notebookPath);
 
     if (marked) {
         marked.setOptions({
@@ -99,6 +108,10 @@ function (marked) {
             tables: true,
             langPrefix: "language-",
             highlight: function(code, lang) {
+                if (!lang) {
+                    // no language, no highlight
+                    return code;
+                }
                 var highlighted;
                 try {
                     highlighted = hljs.highlight(lang, code, false);

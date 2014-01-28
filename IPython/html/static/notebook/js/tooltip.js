@@ -167,12 +167,12 @@ var IPython = (function (IPython) {
         // note that we don't handle closing directly inside the calltip
         // as in the completer, because it is not focusable, so won't
         // get the event.
+        this.cancel_pending();
         if (!this._hidden) {
           if (force || !this._sticky) {
               this.cancel_stick();
               this._hide();
           }
-          this.cancel_pending();
           this.reset_tabs_function();
           return true;
         } else {
@@ -196,7 +196,10 @@ var IPython = (function (IPython) {
         }, that.time_before_tooltip);
     }
 
-    Tooltip.prototype._request_tooltip = function (cell, func) {
+    // easy access for julia monkey patching.
+    Tooltip.last_token_re = /[a-z_][0-9a-z._]*$/gi;
+
+    Tooltip.prototype.extract_oir_token = function(line){
         // use internally just to make the request to the kernel
         // Feel free to shorten this logic if you are better
         // than me in regEx
@@ -205,22 +208,25 @@ var IPython = (function (IPython) {
         // remove everything between matchin bracket (need to iterate)
         var matchBracket = /\([^\(\)]+\)/g;
         var endBracket = /\([^\(]*$/g;
-        var oldfunc = func;
+        var oldline = line;
 
-        func = func.replace(matchBracket, "");
-        while (oldfunc != func) {
-            oldfunc = func;
-            func = func.replace(matchBracket, "");
+        line = line.replace(matchBracket, "");
+        while (oldline != line) {
+            oldline = line;
+            line = line.replace(matchBracket, "");
         }
         // remove everything after last open bracket
-        func = func.replace(endBracket, "");
+        line = line.replace(endBracket, "");
+        // reset the regex object
+        Tooltip.last_token_re.lastIndex = 0;
+        return Tooltip.last_token_re.exec(line)
+    };
 
-        var re = /[a-z_][0-9a-z._]+$/gi; // casse insensitive
-        var callbacks = {
-            'object_info_reply': $.proxy(this._show, this)
-        }
-        var msg_id = cell.kernel.object_info_request(re.exec(func), callbacks);
-    }
+    Tooltip.prototype._request_tooltip = function (cell, line) {
+        var callbacks = $.proxy(this._show, this);
+        var oir_token = this.extract_oir_token(line);
+        var msg_id = cell.kernel.object_info(oir_token, callbacks);
+    };
 
     // make an imediate completion request
     Tooltip.prototype.request = function (cell, hide_if_no_docstring) {
@@ -262,7 +268,9 @@ var IPython = (function (IPython) {
         this.tabs_functions[this._consecutive_counter](cell, text);
 
         // then if we are at the end of list function, reset
-        if (this._consecutive_counter == this.tabs_functions.length) this.reset_tabs_function (cell, text);
+        if (this._consecutive_counter == this.tabs_functions.length) {
+            this.reset_tabs_function (cell, text);
+	}
 
         return;
     }
@@ -294,7 +302,12 @@ var IPython = (function (IPython) {
     Tooltip.prototype._show = function (reply) {
         // move the bubble if it is not hidden
         // otherwise fade it
-        this.name = reply.name;
+        var content = reply.content;
+        if (!content.found) {
+            // object not found, nothing to show
+            return;
+        }
+        this.name = content.name;
 
         // do some math to have the tooltip arrow on more or less on left or right
         // width of the editor
@@ -327,23 +340,23 @@ var IPython = (function (IPython) {
         });
 
         // build docstring
-        var defstring = reply.call_def;
-        if (defstring == null) {
-            defstring = reply.init_definition;
+        var defstring = content.call_def;
+        if (!defstring) {
+            defstring = content.init_definition;
         }
-        if (defstring == null) {
-            defstring = reply.definition;
-        }
-
-        var docstring = reply.call_docstring;
-        if (docstring == null) {
-            docstring = reply.init_docstring;
-        }
-        if (docstring == null) {
-            docstring = reply.docstring;
+        if (!defstring) {
+            defstring = content.definition;
         }
 
-        if (docstring == null) {
+        var docstring = content.call_docstring;
+        if (!docstring) {
+            docstring = content.init_docstring;
+        }
+        if (!docstring) {
+            docstring = content.docstring;
+        }
+
+        if (!docstring) {
             // For reals this time, no docstring
             if (this._hide_if_no_docstring) {
                 return;

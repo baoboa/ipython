@@ -27,7 +27,7 @@ it introduces a new line
 {# .... #}
 
 {% block pyout %}
-{{ output.text | indent | comment_lines }}
+{{ output.text or '' | indent | comment_lines }}
 {% endblock pyout %}
 
 {% block stream %}
@@ -45,10 +45,6 @@ it introduces a new line
 {% block headingcell scoped %}
 {{ '#' * cell.level }}{{ cell.source | replace('\n', ' ') | comment_lines }}
 {% endblock headingcell %}
-
-{% block rawcell scoped %}
-{{ cell.source | comment_lines }}
-{% endblock rawcell %}
 
 {% block unknowncell scoped %}
 unknown type  {{ cell.type }}

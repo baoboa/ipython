@@ -22,20 +22,27 @@ Authors
 # stdlib
 import ast
 import os
+import signal
 import shutil
 import sys
 import tempfile
 import unittest
 from os.path import join
-from StringIO import StringIO
 
 # third-party
 import nose.tools as nt
 
 # Our own
-from IPython.testing.decorators import skipif, onlyif_unicode_paths
+from IPython.testing.decorators import skipif, skip_win32, onlyif_unicode_paths
 from IPython.testing import tools as tt
 from IPython.utils import io
+from IPython.utils import py3compat
+from IPython.utils.py3compat import unicode_type, PY3
+
+if PY3:
+    from io import StringIO
+else:
+    from StringIO import StringIO
 
 #-----------------------------------------------------------------------------
 # Globals
@@ -106,17 +113,6 @@ class InteractiveShellTestCase(unittest.TestCase):
         ip.run_cell('a = """\n%exit\n"""')
         self.assertEqual(ip.user_ns['a'], '\n%exit\n')
     
-    def test_alias_crash(self):
-        """Errors in prefilter can't crash IPython"""
-        ip.run_cell('%alias parts echo first %s second %s')
-        # capture stderr:
-        save_err = io.stderr
-        io.stderr = StringIO()
-        ip.run_cell('parts 1')
-        err = io.stderr.getvalue()
-        io.stderr = save_err
-        self.assertEqual(err.split(':')[0], 'ERROR')
-    
     def test_trailing_newline(self):
         """test that running !(command) does not raise a SyntaxError"""
         ip.run_cell('!(true)\n', False)
@@ -150,7 +146,7 @@ class InteractiveShellTestCase(unittest.TestCase):
             assert isinstance(ip.user_ns['byte_str'], str) # string literals are byte strings by default
             ip.run_cell('from __future__ import unicode_literals')
             ip.run_cell(u'unicode_str = "a"')
-            assert isinstance(ip.user_ns['unicode_str'], unicode) # strings literals are now unicode
+            assert isinstance(ip.user_ns['unicode_str'], unicode_type) # strings literals are now unicode
         finally:
             # Reset compiler flags so we don't mess up other tests.
             ip.compile.reset_compiler_flags()
@@ -164,7 +160,7 @@ class InteractiveShellTestCase(unittest.TestCase):
                      "        list.__init__(self,x)"))
         ip.run_cell("w=Mylist([1,2,3])")
         
-        from cPickle import dumps
+        from pickle import dumps
         
         # We need to swap in our main module - this is only necessary
         # inside the test framework, because IPython puts the interactive module
@@ -411,7 +407,7 @@ class TestSafeExecfileNonAsciiPath(unittest.TestCase):
         os.mkdir(self.TESTDIR)
         with open(join(self.TESTDIR, u"åäötestscript.py"), "w") as sfile:
             sfile.write("pass\n")
-        self.oldpath = os.getcwdu()
+        self.oldpath = py3compat.getcwd()
         os.chdir(self.TESTDIR)
         self.fname = u"åäötestscript.py"
 
@@ -425,19 +421,48 @@ class TestSafeExecfileNonAsciiPath(unittest.TestCase):
         """
         ip.safe_execfile(self.fname, {}, raise_exceptions=True)
 
+class ExitCodeChecks(tt.TempFileMixin):
+    def test_exit_code_ok(self):
+        self.system('exit 0')
+        self.assertEqual(ip.user_ns['_exit_code'], 0)
 
-class TestSystemRaw(unittest.TestCase):
+    def test_exit_code_error(self):
+        self.system('exit 1')
+        self.assertEqual(ip.user_ns['_exit_code'], 1)
+
+    @skipif(not hasattr(signal, 'SIGALRM'))
+    def test_exit_code_signal(self):
+        self.mktmp("import signal, time\n"
+                   "signal.setitimer(signal.ITIMER_REAL, 0.1)\n"
+                   "time.sleep(1)\n")
+        self.system("%s %s" % (sys.executable, self.fname))
+        self.assertEqual(ip.user_ns['_exit_code'], -signal.SIGALRM)
+
+class TestSystemRaw(unittest.TestCase, ExitCodeChecks):
+    system = ip.system_raw
+
     @onlyif_unicode_paths
     def test_1(self):
         """Test system_raw with non-ascii cmd
         """
-        cmd = ur'''python -c "'åäö'"   '''
+        cmd = u'''python -c "'åäö'"   '''
         ip.system_raw(cmd)
-    
-    def test_exit_code(self):
-        """Test that the exit code is parsed correctly."""
-        ip.system_raw('exit 1')
-        self.assertEqual(ip.user_ns['_exit_code'], 1)
+
+# TODO: Exit codes are currently ignored on Windows.
+class TestSystemPipedExitCode(unittest.TestCase, ExitCodeChecks):
+    system = ip.system_piped
+
+    @skip_win32
+    def test_exit_code_ok(self):
+        ExitCodeChecks.test_exit_code_ok(self)
+
+    @skip_win32
+    def test_exit_code_error(self):
+        ExitCodeChecks.test_exit_code_error(self)
+
+    @skip_win32
+    def test_exit_code_signal(self):
+        ExitCodeChecks.test_exit_code_signal(self)
 
 class TestModules(unittest.TestCase, tt.TempFileMixin):
     def test_extraneous_loads(self):

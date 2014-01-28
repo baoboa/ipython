@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*- 
 """Test NbConvertApp"""
 
 #-----------------------------------------------------------------------------
@@ -135,7 +136,7 @@ class TestNbConvertApp(TestsBase):
         """
         with self.create_temp_cwd(['notebook2.ipynb']):
             self.call('nbconvert --log-level 0 --to slides '  
-                      'notebook2.ipynb --template reveal')
+                      'notebook2.ipynb')
             assert os.path.isfile('notebook2.slides.html')
             with open('notebook2.slides.html') as f:
                 assert '/reveal.css' in f.read()
@@ -183,3 +184,24 @@ class TestNbConvertApp(TestsBase):
             self.call('nbconvert --log-level 0 --config="override.py"')
             assert not os.path.isfile('notebook1.py')
             assert os.path.isfile('notebook2.py')
+
+    def test_accents_in_filename(self):
+        """
+        Can notebook names include accents?
+        """
+        with self.create_temp_cwd(['nb*.ipynb']):
+            self.call('nbconvert --log-level 0 --to python nb1_*')
+            assert os.path.isfile(u'nb1_análisis.py')
+    
+    @dec.onlyif_cmds_exist('pdflatex')
+    @dec.onlyif_cmds_exist('pandoc')
+    def test_filename_accent(self):
+        """
+        Generate PDFs if notebooks have an accent in their name?
+        """
+        with self.create_temp_cwd(['nb*.ipynb']):
+            o,e = self.call('nbconvert --log-level 0 --to latex '
+                            '"nb1_*" --post PDF '
+                            '--PDFPostProcessor.verbose=True')
+            assert os.path.isfile(u'nb1_análisis.tex')
+            assert os.path.isfile(u'nb1_análisis.pdf')

@@ -18,8 +18,8 @@ def cell_preprocessor(function):
     """
     Wrap a function to be executed on all cells of a notebook
     
-    Wrapped Parameters
-    ----------
+    The wrapped function should have these parameters:
+    
     cell : NotebookNode cell
         Notebook cell being processed
     resources : dictionary

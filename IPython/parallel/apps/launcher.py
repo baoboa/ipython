@@ -64,6 +64,7 @@ from IPython.utils.traitlets import (
 from IPython.utils.encoding import DEFAULT_ENCODING
 from IPython.utils.path import get_home_dir
 from IPython.utils.process import find_cmd, FindCmdError
+from IPython.utils.py3compat import iteritems, itervalues
 
 from .win32support import forward_read_events
 
@@ -75,13 +76,11 @@ WINDOWS = os.name == 'nt'
 # Paths to the kernel apps
 #-----------------------------------------------------------------------------
 
-cmd = "from IPython.parallel.apps.%s import launch_new_instance; launch_new_instance()"
+ipcluster_cmd_argv = [sys.executable, "-m", "IPython.parallel.cluster"]
 
-ipcluster_cmd_argv = [sys.executable, "-c", cmd % "ipclusterapp"]
+ipengine_cmd_argv = [sys.executable, "-m", "IPython.parallel.engine"]
 
-ipengine_cmd_argv = [sys.executable, "-c", cmd % "ipengineapp"]
-
-ipcontroller_cmd_argv = [sys.executable, "-c", cmd % "ipcontrollerapp"]
+ipcontroller_cmd_argv = [sys.executable, "-m", "IPython.parallel.controller"]
 
 #-----------------------------------------------------------------------------
 # Base launchers and errors
@@ -404,14 +403,14 @@ class LocalEngineSetLauncher(LocalEngineLauncher):
 
     def signal(self, sig):
         dlist = []
-        for el in self.launchers.itervalues():
+        for el in itervalues(self.launchers):
             d = el.signal(sig)
             dlist.append(d)
         return dlist
 
     def interrupt_then_kill(self, delay=1.0):
         dlist = []
-        for el in self.launchers.itervalues():
+        for el in itervalues(self.launchers):
             d = el.interrupt_then_kill(delay)
             dlist.append(d)
         return dlist
@@ -421,7 +420,7 @@ class LocalEngineSetLauncher(LocalEngineLauncher):
 
     def _notice_engine_stopped(self, data):
         pid = data['pid']
-        for idx,el in self.launchers.iteritems():
+        for idx,el in iteritems(self.launchers):
             if el.process.pid == pid:
                 break
         self.launchers.pop(idx)
@@ -742,7 +741,7 @@ class SSHEngineSetLauncher(LocalEngineSetLauncher):
     def engine_count(self):
         """determine engine count from `engines` dict"""
         count = 0
-        for n in self.engines.itervalues():
+        for n in itervalues(self.engines):
             if isinstance(n, (tuple,list)):
                 n,args = n
             count += n
@@ -754,7 +753,7 @@ class SSHEngineSetLauncher(LocalEngineSetLauncher):
         """
 
         dlist = []
-        for host, n in self.engines.iteritems():
+        for host, n in iteritems(self.engines):
             if isinstance(n, (tuple, list)):
                 n, args = n
             else:
@@ -1307,9 +1306,10 @@ class HTCondorLauncher(BatchSystemLauncher):
     this - the mechanism of shebanged scripts means that the python binary will be 
     launched with argv[0] set to the *location of the ip{cluster, engine, controller} 
     scripts on the remote node*. This means you need to take care that:
-      a. Your remote nodes have their paths configured correctly, with the ipengine and ipcontroller
-         of the python environment you wish to execute code in having top precedence.
-      b. This functionality is untested on Windows.
+
+    a. Your remote nodes have their paths configured correctly, with the ipengine and ipcontroller
+       of the python environment you wish to execute code in having top precedence.
+    b. This functionality is untested on Windows.
 
     If you need different behavior, consider making you own template.
     """

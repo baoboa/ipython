@@ -28,6 +28,7 @@ from nose import SkipTest
 from IPython.testing import decorators as dec
 from IPython.testing import tools as tt
 from IPython.utils import py3compat
+from IPython.utils.io import capture_output
 from IPython.utils.tempdir import TemporaryDirectory
 from IPython.core import debugger
 
@@ -370,6 +371,24 @@ tclass.py: deleting object: C-third
         
         with tt.AssertNotPrints('SystemExit'):
             _ip.magic('run -e %s' % self.fname)
+    
+    def test_run_nb(self):
+        """Test %run notebook.ipynb"""
+        from IPython.nbformat import current
+        nb = current.new_notebook(
+            worksheets=[
+                current.new_worksheet(cells=[
+                    current.new_text_cell("The Ultimate Question of Everything"),
+                    current.new_code_cell("answer=42")
+                ])
+            ]
+        )
+        src = current.writes(nb, 'json')
+        self.mktmp(src, ext='.ipynb')
+        
+        _ip.magic("run %s" % self.fname)
+        
+        nt.assert_equal(_ip.user_ns['answer'], 42)
         
 
 
@@ -390,7 +409,7 @@ class TestMagicRunWithPackage(unittest.TestCase):
         self.value = int(random.random() * 10000)
 
         self.tempdir = TemporaryDirectory()
-        self.__orig_cwd = os.getcwdu()
+        self.__orig_cwd = py3compat.getcwd()
         sys.path.insert(0, self.tempdir.name)
 
         self.writefile(os.path.join(package, '__init__.py'), '')
@@ -456,3 +475,40 @@ def test_run__name__():
         
         _ip.magic('run -n {}'.format(path))
         nt.assert_equal(_ip.user_ns.pop('q'), 'foo')
+
+def test_run_tb():
+    """Test traceback offset in %run"""
+    with TemporaryDirectory() as td:
+        path = pjoin(td, 'foo.py')
+        with open(path, 'w') as f:
+            f.write('\n'.join([
+                "def foo():",
+                "    return bar()",
+                "def bar():",
+                "    raise RuntimeError('hello!')",
+                "foo()",
+            ]))
+        with capture_output() as io:
+            _ip.magic('run {}'.format(path))
+        out = io.stdout
+        nt.assert_not_in("execfile", out)
+        nt.assert_in("RuntimeError", out)
+        nt.assert_equal(out.count("---->"), 3)
+
+def test_script_tb():
+    """Test traceback offset in `ipython script.py`"""
+    with TemporaryDirectory() as td:
+        path = pjoin(td, 'foo.py')
+        with open(path, 'w') as f:
+            f.write('\n'.join([
+                "def foo():",
+                "    return bar()",
+                "def bar():",
+                "    raise RuntimeError('hello!')",
+                "foo()",
+            ]))
+        out, err = tt.ipexec(path)
+        nt.assert_not_in("execfile", out)
+        nt.assert_in("RuntimeError", out)
+        nt.assert_equal(out.count("---->"), 3)
+

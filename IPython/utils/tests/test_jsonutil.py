@@ -21,11 +21,14 @@ import nose.tools as nt
 # our own
 from IPython.utils import jsonutil, tz
 from ..jsonutil import json_clean, encode_images
-from ..py3compat import unicode_to_str, str_to_bytes
+from ..py3compat import unicode_to_str, str_to_bytes, iteritems
 
 #-----------------------------------------------------------------------------
 # Test functions
 #-----------------------------------------------------------------------------
+class Int(int):
+    def __str__(self):
+        return 'Int(%i)' % self
 
 def test():
     # list of input/expected output.  Use None for the expected output if it
@@ -48,6 +51,7 @@ def test():
              # More exotic objects
              ((x for x in range(3)), [0, 1, 2]),
              (iter([1, 2]), [1, 2]),
+             (Int(5), 5),
              ]
     
     for val, jval in pairs:
@@ -71,7 +75,7 @@ def test_encode_images():
         'image/jpeg' : jpegdata,
     }
     encoded = encode_images(fmt)
-    for key, value in fmt.iteritems():
+    for key, value in iteritems(fmt):
         # encoded has unicode, want bytes
         decoded = decodestring(encoded[key].encode('ascii'))
         nt.assert_equal(decoded, value)
@@ -79,11 +83,11 @@ def test_encode_images():
     nt.assert_equal(encoded, encoded2)
     
     b64_str = {}
-    for key, encoded in encoded.iteritems():
+    for key, encoded in iteritems(encoded):
         b64_str[key] = unicode_to_str(encoded)
     encoded3 = encode_images(b64_str)
     nt.assert_equal(encoded3, b64_str)
-    for key, value in fmt.iteritems():
+    for key, value in iteritems(fmt):
         # encoded3 has str, want bytes
         decoded = decodestring(str_to_bytes(encoded3[key]))
         nt.assert_equal(decoded, value)
@@ -112,6 +116,18 @@ def test_extract_dates():
     for dt in extracted:
         nt.assert_true(isinstance(dt, datetime.datetime))
         nt.assert_equal(dt, ref)
+
+def test_parse_ms_precision():
+    base = '2013-07-03T16:34:52.'
+    digits = '1234567890'
+    
+    for i in range(len(digits)):
+        ts = base + digits[:i]
+        parsed = jsonutil.parse_date(ts)
+        if i >= 1 and i <= 6:
+            assert isinstance(parsed, datetime.datetime)
+        else:
+            assert isinstance(parsed, str)
 
 def test_date_default():
     data = dict(today=datetime.datetime.now(), utcnow=tz.utcnow())

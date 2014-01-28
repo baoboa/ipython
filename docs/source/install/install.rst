@@ -190,15 +190,19 @@ get.  These are:
 
 * readline (for command line editing, tab completion, etc.)
 * nose (to run the IPython test suite)
-* pexpect (to use things like irunner)
 
 If you are comfortable installing these things yourself, have at it, otherwise
 read on for more details.
 
+IPython uses several other modules, such as pexpect_ and path.py, if they are
+installed on your system, but it can also use bundled versions from
+:mod:`IPython.external`, so there's no need to install them separately.
+
 readline
 --------
 
-As indicated above, on Windows, PyReadline is a *mandatory* dependency.
+As indicated above, on Windows, to get full functionality in the console
+version of IPython, PyReadline is needed.
 PyReadline is a separate, Windows only implementation of readline that uses
 native Windows calls through :mod:`ctypes`. The easiest way of installing
 PyReadline is you use the binary installer available `here
@@ -260,25 +264,6 @@ iptest command:
 .. code-block:: bash
 
     $ iptest
-
-pexpect
--------
-
-The pexpect_ package is used in IPython's :command:`irunner` script, as well as
-for managing subprocesses. IPython now includes a version of pexpect in
-:mod:`IPython.external`, but if you have installed pexpect, IPython will use
-that instead. On Unix platforms (including OS X), just do:
-
-.. code-block:: bash
-
-    $ pip install pexpect
-    
-.. note::
-
-    On Python 3, you should actually install :mod:`pexpect-u`,
-    a unicode-safe fork of pexpect.
-
-Windows users are out of luck as pexpect does not run there.
 
 Dependencies for IPython.parallel (parallel computing)
 ======================================================
@@ -426,7 +411,7 @@ Dependencies for nbconvert (converting notebooks to various formats)
 pandoc
 ------
 
-The most important dependency of nbconvert is Pandoc_, a document format translation program.
+The most important dependency of nbconvert is Pandoc_ 1.10 or later, a document format translation program.
 This is not a Python package, so it cannot be expressed as a regular IPython dependency with setuptools.
 
 To install pandoc on Linux, you can generally use your package manager::
@@ -440,7 +425,7 @@ On other platforms, you can get pandoc from `their website <http://johnmacfarlan
 .. _PyZMQ: https://github.com/zeromq/pyzmq
 .. _paramiko: https://github.com/robey/paramiko
 .. _pygments: http://pygments.org
-.. _pexpect: http://www.noah.org/wiki/Pexpect
+.. _pexpect: http://pexpect.readthedocs.org/en/latest/
 .. _Jinja: http://jinja.pocoo.org
 .. _Sphinx: http://sphinx-doc.org
 .. _pandoc: http://johnmacfarlane.net/pandoc

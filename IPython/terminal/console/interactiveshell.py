@@ -23,11 +23,15 @@ import subprocess
 from io import BytesIO
 import base64
 
-from Queue import Empty
+try:
+    from queue import Empty  # Py 3
+except ImportError:
+    from Queue import Empty  # Py 2
 
 from IPython.core import page
 from IPython.utils.warn import warn, error
 from IPython.utils import io
+from IPython.utils.py3compat import string_types, input
 from IPython.utils.traitlets import List, Enum, Any, Instance, Unicode, Float
 from IPython.utils.tempdir import NamedFileInTemporaryDirectory
 
@@ -117,7 +121,7 @@ class ZMQTerminalInteractiveShell(TerminalInteractiveShell):
 
         This creates completion machinery that can be used by client code,
         either interactively in-process (typically triggered by the readline
-        library), programatically (such as in test suites) or out-of-prcess
+        library), programmatically (such as in test suites) or out-of-process
         (typically over the network by remote frontends).
         """
         from IPython.core.completerlib import (module_completer,
@@ -136,6 +140,11 @@ class ZMQTerminalInteractiveShell(TerminalInteractiveShell):
         # itself may be absent
         if self.has_readline:
             self.set_readline_completer()
+    
+    def ask_exit(self):
+        super(ZMQTerminalInteractiveShell, self).ask_exit()
+        if self.exit_now and self.manager:
+            self.client.shutdown()
     
     def run_cell(self, cell, store_history=True):
         """Run a complete IPython cell.
@@ -254,8 +263,12 @@ class ZMQTerminalInteractiveShell(TerminalInteractiveShell):
                     hook.finish_displayhook()
 
                 elif msg_type == 'display_data':
-                    self.handle_rich_data(sub_msg["content"]["data"])
-                    
+                    data = sub_msg["content"]["data"]
+                    handled = self.handle_rich_data(data)
+                    if not handled:
+                        # if it was an image, we handled it by now
+                        if 'text/plain' in data:
+                            print(data['text/plain'])
 
     _imagemime = {
         'image/png': 'png',
@@ -267,7 +280,7 @@ class ZMQTerminalInteractiveShell(TerminalInteractiveShell):
         for mime in self.mime_preference:
             if mime in data and mime in self._imagemime:
                 self.handle_image(data, mime)
-                return
+                return True
 
     def handle_image(self, data, mime):
         handler = getattr(
@@ -326,7 +339,7 @@ class ZMQTerminalInteractiveShell(TerminalInteractiveShell):
             signal.signal(signal.SIGINT, double_int)
             
             try:
-                raw_data = raw_input(msg_rep["content"]["prompt"])
+                raw_data = input(msg_rep["content"]["prompt"])
             except EOFError:
                 # turn EOFError into EOF character
                 raw_data = '\x04'
@@ -387,7 +400,7 @@ class ZMQTerminalInteractiveShell(TerminalInteractiveShell):
         if display_banner is None:
             display_banner = self.display_banner
         
-        if isinstance(display_banner, basestring):
+        if isinstance(display_banner, string_types):
             self.show_banner(display_banner)
         elif display_banner:
             self.show_banner()

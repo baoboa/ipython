@@ -31,6 +31,7 @@ from __future__ import print_function
 
 from IPython.config.configurable import Configurable
 from IPython.utils import io
+from IPython.utils.py3compat import string_types
 from IPython.utils.traitlets import List
 
 #-----------------------------------------------------------------------------
@@ -58,7 +59,7 @@ class DisplayPublisher(Configurable):
             Any metadata for the data.
         """
 
-        if not isinstance(source, basestring):
+        if not isinstance(source, string_types):
             raise TypeError('source must be a str, got: %r' % source)
         if not isinstance(data, dict):
             raise TypeError('data must be a dict, got: %r' % data)
@@ -108,14 +109,12 @@ class DisplayPublisher(Configurable):
         if 'text/plain' in data:
             print(data['text/plain'], file=io.stdout)
 
-    def clear_output(self, stdout=True, stderr=True, other=True):
+    def clear_output(self, wait=False):
         """Clear the output of the cell receiving output."""
-        if stdout:
-            print('\033[2K\r', file=io.stdout, end='')
-            io.stdout.flush()
-        if stderr:
-            print('\033[2K\r', file=io.stderr, end='')
-            io.stderr.flush()
+        print('\033[2K\r', file=io.stdout, end='')
+        io.stdout.flush()
+        print('\033[2K\r', file=io.stderr, end='')
+        io.stderr.flush()
 
 
 class CapturingDisplayPublisher(DisplayPublisher):
@@ -125,11 +124,11 @@ class CapturingDisplayPublisher(DisplayPublisher):
     def publish(self, source, data, metadata=None):
         self.outputs.append((source, data, metadata))
     
-    def clear_output(self, stdout=True, stderr=True, other=True):
-        super(CapturingDisplayPublisher, self).clear_output(stdout, stderr, other)
-        if other:
-            # empty the list, *do not* reassign a new list
-            del self.outputs[:]
+    def clear_output(self, wait=False):
+        super(CapturingDisplayPublisher, self).clear_output(wait)
+        
+        # empty the list, *do not* reassign a new list
+        del self.outputs[:]
 
 
 def publish_display_data(source, data, metadata=None):

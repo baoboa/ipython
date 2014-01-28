@@ -31,6 +31,7 @@ from .channelsabc import (
     ShellChannelABC, IOPubChannelABC,
     HBChannelABC, StdInChannelABC,
 )
+from IPython.utils.py3compat import string_types, iteritems
 
 #-----------------------------------------------------------------------------
 # Constants and exceptions
@@ -53,7 +54,7 @@ def validate_string_list(lst):
     if not isinstance(lst, list):
         raise ValueError('input %r must be a list' % lst)
     for x in lst:
-        if not isinstance(x, basestring):
+        if not isinstance(x, string_types):
             raise ValueError('element %r in list must be a string' % x)
 
 
@@ -61,10 +62,10 @@ def validate_string_dict(dct):
     """Validate that the input is a dict with string keys and values.
 
     Raises ValueError if not."""
-    for k,v in dct.iteritems():
-        if not isinstance(k, basestring):
+    for k,v in iteritems(dct):
+        if not isinstance(k, string_types):
             raise ValueError('key %r in dict must be a string' % k)
-        if not isinstance(v, basestring):
+        if not isinstance(v, string_types):
             raise ValueError('value %r in dict must be a string' % v)
 
 
@@ -132,9 +133,9 @@ class ZMQSocketChannel(Thread):
     def stop(self):
         """Stop the channel's event loop and join its thread.
 
-        This calls :method:`Thread.join` and returns when the thread
+        This calls :meth:`~threading.Thread.join` and returns when the thread
         terminates. :class:`RuntimeError` will be raised if
-        :method:`self.start` is called again.
+        :meth:`~threading.Thread.start` is called again.
         """
         self.join()
 
@@ -264,7 +265,7 @@ class ShellChannel(ZMQSocketChannel):
 
 
         # Don't waste network traffic if inputs are invalid
-        if not isinstance(code, basestring):
+        if not isinstance(code, string_types):
             raise ValueError('code %r must be a string' % code)
         validate_string_list(user_variables)
         validate_string_dict(user_expressions)
@@ -429,7 +430,7 @@ class IOPubChannel(ZMQSocketChannel):
     def flush(self, timeout=1.0):
         """Immediately processes all pending messages on the iopub channel.
 
-        Callers should use this method to ensure that :method:`call_handlers`
+        Callers should use this method to ensure that :meth:`call_handlers`
         has been called for all messages that have been received on the
         0MQ SUB socket of this channel.
 
@@ -444,7 +445,7 @@ class IOPubChannel(ZMQSocketChannel):
         # We do the IOLoop callback process twice to ensure that the IOLoop
         # gets to perform at least one full poll.
         stop_time = time.time() + timeout
-        for i in xrange(2):
+        for i in range(2):
             self._flushed = False
             self.ioloop.add_callback(self._flush)
             while not self._flushed and time.time() < stop_time:

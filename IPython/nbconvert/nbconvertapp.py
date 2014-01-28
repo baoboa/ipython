@@ -77,7 +77,7 @@ nbconvert_flags.update({
 
 
 class NbConvertApp(BaseIPythonApplication):
-    """Application used to convert to and from notebook file type (*.ipynb)"""
+    """Application used to convert from notebook file type (``*.ipynb``)"""
 
     name = 'ipython-nbconvert'
     aliases = nbconvert_aliases
@@ -88,7 +88,7 @@ class NbConvertApp(BaseIPythonApplication):
     
     def _classes_default(self):
         classes = [NbConvertBase, ProfileDir]
-        for pkg in (exporters, preprocessors, writers):
+        for pkg in (exporters, preprocessors, writers, postprocessors):
             for name in dir(pkg):
                 cls = getattr(pkg, name)
                 if isinstance(cls, type) and issubclass(cls, Configurable):

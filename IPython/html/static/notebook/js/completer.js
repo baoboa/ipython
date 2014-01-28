@@ -1,16 +1,17 @@
 // function completer.
 //
-// completer should be a class that take an cell instance
+// completer should be a class that takes an cell instance
 var IPython = (function (IPython) {
     // that will prevent us from misspelling
     "use strict";
 
-    // easyier key mapping
+    // easier key mapping
     var key = IPython.utils.keycodes;
 
     function prepend_n_prc(str, n) {
-        for( var i =0 ; i< n ; i++)
-        { str = '%'+str }
+        for( var i =0 ; i< n ; i++){
+            str = '%'+str ;
+        }
         return str;
     }
 
@@ -33,7 +34,7 @@ var IPython = (function (IPython) {
         for (var i = 0; i < B.length; i++) {
             var str = B[i].str;
             var localmin = 0;
-            if(drop_prct == true){
+            if(drop_prct === true){
                 while ( str.substr(0, 1) == '%') {
                     localmin = localmin+1;
                     str = str.substring(1);
@@ -52,13 +53,13 @@ var IPython = (function (IPython) {
             while (s && tem2.indexOf(tem1) == -1) {
                 tem1 = tem1.substring(0, --s);
             }
-            if (tem1 == "" || tem2.indexOf(tem1) != 0) {
+            if (tem1 === "" || tem2.indexOf(tem1) !== 0) {
                 return {
                     str:prepend_n_prc('', min_lead_prct),
                     type: "computed",
                     from: B[0].from,
                     to: B[0].to
-                    }
+                    };
             }
             return {
                 str: prepend_n_prc(tem1, min_lead_prct),
@@ -94,10 +95,28 @@ var IPython = (function (IPython) {
         this.carry_on_completion(true);
     };
 
-    Completer.prototype.carry_on_completion = function (ff) {
-        // Pass true as parameter if you want the commpleter to autopick when
+
+    // easy access for julia to monkeypatch
+    //
+    Completer.reinvoke_re = /[%0-9a-z._/\\:~-]/i;
+
+    Completer.prototype.reinvoke= function(pre_cursor, block, cursor){
+        return Completer.reinvoke_re.test(pre_cursor);
+    }
+
+    /**
+     *
+     * pass true as parameter if this is the first invocation of the completer
+     * this will prevent the completer to dissmiss itself if it is not on a
+     * word boundary like pressing tab after a space, and make it autopick the
+     * only choice if there is only one which prevent from popping the UI.  as
+     * well as fast-forwarding the typing if all completion have a common
+     * shared start
+     **/
+    Completer.prototype.carry_on_completion = function (first_invocation) {
+        // Pass true as parameter if you want the completer to autopick when
         // only one completion. This function is automatically reinvoked at
-        // each keystroke with ff = false
+        // each keystroke with first_invocation = false
         var cur = this.editor.getCursor();
         var line = this.editor.getLine(cur.line);
         var pre_cursor = this.editor.getRange({
@@ -107,18 +126,21 @@ var IPython = (function (IPython) {
 
         // we need to check that we are still on a word boundary
         // because while typing the completer is still reinvoking itself
-        if (!/[%0-9a-z._/\\:~-]/i.test(pre_cursor)) {
+        // so dismiss if we are on a "bad" caracter
+        if (!this.reinvoke(pre_cursor) && !first_invocation) {
             this.close();
             return;
         }
 
         this.autopick = false;
-        if (ff != 'undefined' && ff == true) {
+        if (first_invocation) {
             this.autopick = true;
         }
 
         // We want a single cursor position.
-        if (this.editor.somethingSelected()) return;
+        if (this.editor.somethingSelected()) {
+            return;
+        };
 
         // one kernel completion came back, finish_completing will be called with the results
         // we fork here and directly call finish completing if kernel is busy
@@ -128,16 +150,14 @@ var IPython = (function (IPython) {
                 matched_text: ""
             })
         } else {
-            var callbacks = {
-                'complete_reply': $.proxy(this.finish_completing, this)
-            };
-            this.cell.kernel.complete(line, cur.ch, callbacks);
+            this.cell.kernel.complete(line, cur.ch, $.proxy(this.finish_completing, this));
         }
     };
 
-    Completer.prototype.finish_completing = function (content) {
+    Completer.prototype.finish_completing = function (msg) {
         // let's build a function that wrap all that stuff into what is needed
         // for the new completer:
+        var content = msg.content;
         var matched_text = content.matched_text;
         var matches = content.matches;
 
@@ -198,16 +218,32 @@ var IPython = (function (IPython) {
         this.complete = $('<div/>').addClass('completions');
         this.complete.attr('id', 'complete');
 
-        this.sel = $('<select style="width: auto"/>').attr('multiple', 'true').attr('size', Math.min(10, this.raw_result.length));
-        //var pos = this.editor.cursorCoords();
-		var cur = this.editor.getCursor();
-		cur.ch = cur.ch-matched_text.length;
-		var pos = this.editor.cursorCoords(cur);
-        this.complete.css('left', pos.left-3 + 'px');
-        this.complete.css('top', pos.bottom+1 + 'px');
+        // Currently webkit doesn't use the size attr correctly. See:
+        // https://code.google.com/p/chromium/issues/detail?id=4579
+        this.sel = $('<select style="width: auto"/>')
+            .attr('multiple', 'true')
+            .attr('size', Math.min(10, this.raw_result.length));
         this.complete.append(this.sel);
-
         $('body').append(this.complete);
+
+        // After everything is on the page, compute the postion.
+        // We put it above the code if it is too close to the bottom of the page.
+        var cur = this.editor.getCursor();
+        cur.ch = cur.ch-matched_text.length;
+        var pos = this.editor.cursorCoords(cur);
+        var left = pos.left-3;
+        var top;
+        var cheight = this.complete.height();
+        var wheight = $(window).height();
+        if (pos.bottom+cheight+5 > wheight) {
+            top = pos.top-cheight-4;
+        } else {
+            top = pos.bottom+1;
+        }
+        this.complete.css('left', left + 'px');
+        this.complete.css('top', top + 'px');
+
+
         //build the container
         var that = this;
         this.sel.dblclick(function () {
@@ -221,6 +257,7 @@ var IPython = (function (IPython) {
         this.build_gui_list(this.raw_result);
 
         this.sel.focus();
+        IPython.keyboard_manager.disable();
         // Opera sometimes ignores focusing a freshly created node
         if (window.opera) setTimeout(function () {
             if (!this.done) this.sel.focus();
@@ -233,18 +270,19 @@ var IPython = (function (IPython) {
     }
 
     Completer.prototype.build_gui_list = function (completions) {
-        // Need to clear the all list
         for (var i = 0; i < completions.length; ++i) {
             var opt = $('<option/>').text(completions[i].str).addClass(completions[i].type);
             this.sel.append(opt);
         }
         this.sel.children().first().attr('selected', 'true');
+        this.sel.scrollTop(0);
     }
 
     Completer.prototype.close = function () {
         if (this.done) return;
         this.done = true;
         $('.completions').remove();
+        IPython.keyboard_manager.enable();
     }
 
     Completer.prototype.pick = function () {
@@ -261,13 +299,13 @@ var IPython = (function (IPython) {
         var code = event.keyCode;
         var that = this;
         var special_key = false;
-        
+
         // detect special keys like SHIFT,PGUP,...
         for( var _key in key ) {
             if (code == key[_key] ) {
                 special_key = true;
             }
-        };         
+        };
 
         // Enter
         if (code == key.ENTER) {
@@ -302,7 +340,7 @@ var IPython = (function (IPython) {
             // need to do that to be able to move the arrow
             // when on the first or last line ofo a code cell
             event.stopPropagation();
-        } else if (special_key != true) { 
+        } else if (special_key != true) {
             this.close();
             this.editor.focus();
             //we give focus to the editor immediately and call sell in 50 ms

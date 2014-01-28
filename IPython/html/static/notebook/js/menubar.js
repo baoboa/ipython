@@ -18,9 +18,11 @@
 
 var IPython = (function (IPython) {
     "use strict";
+    
+    var utils = IPython.utils;
 
     /**
-     * A MenuBar Class to generate the menubar of IPython noteboko
+     * A MenuBar Class to generate the menubar of IPython notebook
      * @Class MenuBar
      *
      * @constructor
@@ -34,8 +36,8 @@ var IPython = (function (IPython) {
      *      does not support change for now is set through this option
      */
     var MenuBar = function (selector, options) {
-        var options = options || {};
-        if(options.baseProjectUrl!= undefined){
+        options = options || {};
+        if (options.baseProjectUrl !== undefined) {
             this._baseProjectUrl = options.baseProjectUrl;
         }
         this.selector = selector;
@@ -50,7 +52,12 @@ var IPython = (function (IPython) {
         return this._baseProjectUrl || $('body').data('baseProjectUrl');
     };
 
-
+    MenuBar.prototype.notebookPath = function() {
+        var path = $('body').data('notebookPath');
+        path = decodeURIComponent(path);
+        return path;
+    };
+    
     MenuBar.prototype.style = function () {
         this.element.addClass('border-box-sizing');
         this.element.find("li").click(function (event, ui) {
@@ -62,45 +69,86 @@ var IPython = (function (IPython) {
         );
     };
 
+    MenuBar.prototype._nbconvert = function (format, download) {
+        download = download || false;
+        var notebook_name = IPython.notebook.get_notebook_name();
+        if (IPython.notebook.dirty) {
+            IPython.notebook.save_notebook({async : false});
+        }
+        var url = utils.url_path_join(
+            this.baseProjectUrl(),
+            'nbconvert',
+            format,
+            this.notebookPath(),
+            notebook_name + '.ipynb'
+        ) + "?download=" + download.toString();
+
+        window.open(url);
+    }
 
     MenuBar.prototype.bind_events = function () {
         //  File
         var that = this;
         this.element.find('#new_notebook').click(function () {
-            window.open(that.baseProjectUrl()+'new');
+            IPython.notebook.new_notebook();
         });
         this.element.find('#open_notebook').click(function () {
-            window.open(that.baseProjectUrl());
-        });
-        this.element.find('#rename_notebook').click(function () {
-            IPython.save_widget.rename_notebook();
+            window.open(utils.url_join_encode(
+                that.baseProjectUrl(),
+                'tree',
+                that.notebookPath()
+            ));
         });
         this.element.find('#copy_notebook').click(function () {
-            var notebook_id = IPython.notebook.get_notebook_id();
-            var url = that.baseProjectUrl() + notebook_id + '/copy';
-            window.open(url,'_blank');
+            IPython.notebook.copy_notebook();
             return false;
+        });
+        this.element.find('#download_ipynb').click(function () {
+            var notebook_name = IPython.notebook.get_notebook_name();
+            if (IPython.notebook.dirty) {
+                IPython.notebook.save_notebook({async : false});
+            }
+            
+            var url = utils.url_join_encode(
+                that.baseProjectUrl(),
+                'files',
+                that.notebookPath(),
+                notebook_name + '.ipynb'
+            );
+            window.location.assign(url);
+        });
+        
+        this.element.find('#print_preview').click(function () {
+            that._nbconvert('html', false);
+        });
+
+        this.element.find('#download_py').click(function () {
+            that._nbconvert('python', true);
+        });
+
+        this.element.find('#download_html').click(function () {
+            that._nbconvert('html', true);
+        });
+
+        this.element.find('#download_rst').click(function () {
+            that._nbconvert('rst', true);
+        });
+
+        this.element.find('#rename_notebook').click(function () {
+            IPython.save_widget.rename_notebook();
         });
         this.element.find('#save_checkpoint').click(function () {
             IPython.notebook.save_checkpoint();
         });
         this.element.find('#restore_checkpoint').click(function () {
         });
-        this.element.find('#download_ipynb').click(function () {
-            var notebook_id = IPython.notebook.get_notebook_id();
-            var url = that.baseProjectUrl() + 'notebooks/' +
-                      notebook_id + '?format=json';
-            window.location.assign(url);
-        });
-        this.element.find('#download_py').click(function () {
-            var notebook_id = IPython.notebook.get_notebook_id();
-            var url = that.baseProjectUrl() + 'notebooks/' +
-                      notebook_id + '?format=py';
-            window.location.assign(url);
-        });
         this.element.find('#kill_and_exit').click(function () {
-            IPython.notebook.kernel.kill();
-            setTimeout(function(){window.close();}, 200);
+            IPython.notebook.session.delete();
+            setTimeout(function(){
+                // allow closing of new tabs in Chromium, impossible in FF
+                window.open('', '_self', '');
+                window.close();
+            }, 500);
         });
         // Edit
         this.element.find('#cut_cell').click(function () {
@@ -113,7 +161,7 @@ var IPython = (function (IPython) {
             IPython.notebook.delete_cell();
         });
         this.element.find('#undelete_cell').click(function () {
-            IPython.notebook.undelete();
+            IPython.notebook.undelete_cell();
         });
         this.element.find('#split_cell').click(function () {
             IPython.notebook.split_cell();
@@ -136,6 +184,10 @@ var IPython = (function (IPython) {
         this.element.find('#select_next').click(function () {
             IPython.notebook.select_next();
         });
+        this.element.find('#edit_nb_metadata').click(function () {
+            IPython.notebook.edit_metadata();
+        });
+        
         // View
         this.element.find('#toggle_header').click(function () {
             $('div#header').toggle();
@@ -148,26 +200,31 @@ var IPython = (function (IPython) {
         // Insert
         this.element.find('#insert_cell_above').click(function () {
             IPython.notebook.insert_cell_above('code');
+            IPython.notebook.select_prev();
         });
         this.element.find('#insert_cell_below').click(function () {
             IPython.notebook.insert_cell_below('code');
+            IPython.notebook.select_next();
         });
         // Cell
         this.element.find('#run_cell').click(function () {
-            IPython.notebook.execute_selected_cell();
+            IPython.notebook.execute_cell();
         });
-        this.element.find('#run_cell_in_place').click(function () {
-            IPython.notebook.execute_selected_cell({terminal:true});
+        this.element.find('#run_cell_select_below').click(function () {
+            IPython.notebook.execute_cell_and_select_below();
+        });
+        this.element.find('#run_cell_insert_below').click(function () {
+            IPython.notebook.execute_cell_and_insert_below();
         });
         this.element.find('#run_all_cells').click(function () {
             IPython.notebook.execute_all_cells();
-        }).attr('title', 'Run all cells in the notebook');
+        });
         this.element.find('#run_all_cells_above').click(function () {
             IPython.notebook.execute_cells_above();
-        }).attr('title', 'Run all cells above (but not including) this cell');
+        });
         this.element.find('#run_all_cells_below').click(function () {
             IPython.notebook.execute_cells_below();
-        }).attr('title', 'Run this cell and all cells below it');
+        });
         this.element.find('#to_code').click(function () {
             IPython.notebook.to_code();
         });
@@ -212,7 +269,7 @@ var IPython = (function (IPython) {
         });
         // Kernel
         this.element.find('#int_kernel').click(function () {
-            IPython.notebook.kernel.interrupt();
+            IPython.notebook.session.interrupt_kernel();
         });
         this.element.find('#restart_kernel').click(function () {
             IPython.notebook.restart_kernel();
@@ -236,7 +293,7 @@ var IPython = (function (IPython) {
     MenuBar.prototype.update_restore_checkpoint = function(checkpoints) {
         var ul = this.element.find("#restore_checkpoint").find("ul");
         ul.empty();
-        if (! checkpoints || checkpoints.length == 0) {
+        if (!checkpoints || checkpoints.length === 0) {
             ul.append(
                 $("<li/>")
                 .addClass("disabled")
@@ -246,7 +303,7 @@ var IPython = (function (IPython) {
                 )
             );
             return;
-        };
+        }
         
         checkpoints.map(function (checkpoint) {
             var d = new Date(checkpoint.last_modified);

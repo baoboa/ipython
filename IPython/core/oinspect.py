@@ -36,10 +36,11 @@ from IPython.utils import PyColorize
 from IPython.utils import io
 from IPython.utils import openpy
 from IPython.utils import py3compat
+from IPython.utils.dir2 import safe_hasattr
 from IPython.utils.text import indent
 from IPython.utils.wildcard import list_namespace
 from IPython.utils.coloransi import *
-from IPython.utils.py3compat import cast_unicode
+from IPython.utils.py3compat import cast_unicode, string_types
 
 #****************************************************************************
 # Builtin color schemes
@@ -129,7 +130,7 @@ def getdoc(obj):
         pass
     else:
         # if we get extra info, we add it to the normal docstring.
-        if isinstance(ds, basestring):
+        if isinstance(ds, string_types):
             return inspect.cleandoc(ds)
     
     try:
@@ -156,8 +157,8 @@ def getsource(obj,is_binary=False):
     Optional inputs:
 
     - is_binary: whether the object is known to come from a binary source.
-    This implementation will skip returning any output for binary objects, but
-    custom extractors may know how to meaningfully process them."""
+      This implementation will skip returning any output for binary objects, but
+      custom extractors may know how to meaningfully process them."""
 
     if is_binary:
         return None
@@ -187,13 +188,13 @@ def getargspec(obj):
     if inspect.isfunction(obj):
         func_obj = obj
     elif inspect.ismethod(obj):
-        func_obj = obj.im_func
+        func_obj = obj.__func__
     elif hasattr(obj, '__call__'):
         func_obj = obj.__call__
     else:
         raise TypeError('arg is not a Python function')
-    args, varargs, varkw = inspect.getargs(func_obj.func_code)
-    return args, varargs, varkw, func_obj.func_defaults
+    args, varargs, varkw = inspect.getargs(func_obj.__code__)
+    return args, varargs, varkw, func_obj.__defaults__
 
 
 def format_argspec(argspec):
@@ -257,16 +258,6 @@ def call_tip(oinfo, format_call=True):
         doc = oinfo.get('docstring','')
 
     return call_line, doc
-
-def safe_hasattr(obj, attr):
-    """In recent versions of Python, hasattr() only catches AttributeError.
-    This catches all errors.
-    """
-    try:
-        getattr(obj, attr)
-        return True
-    except:
-        return False
 
 
 def find_file(obj):
@@ -545,7 +536,7 @@ class Inspector:
         - formatter: special formatter for docstrings (see pdoc)
 
         - info: a structure with some information fields which may have been
-        precomputed already.
+          precomputed already.
 
         - detail_level: if set to 1, more information is given.
         """
@@ -609,7 +600,7 @@ class Inspector:
         - formatter: special formatter for docstrings (see pdoc)
 
         - info: a structure with some information fields which may have been
-        precomputed already.
+          precomputed already.
 
         - detail_level: if set to 1, more information is given.
         """
@@ -829,8 +820,8 @@ class Inspector:
         Arguments:
 
         - pattern: string containing shell-like wildcards to use in namespace
-        searches and optionally a type specification to narrow the search to
-        objects of that type.
+          searches and optionally a type specification to narrow the search to
+          objects of that type.
 
         - ns_table: dict of name->namespaces for search.
 
@@ -841,7 +832,7 @@ class Inspector:
           - ignore_case(False): make the search case-insensitive.
 
           - show_all(False): show all names, including those starting with
-          underscores.
+            underscores.
         """
         #print 'ps pattern:<%r>' % pattern # dbg
 

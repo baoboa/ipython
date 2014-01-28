@@ -14,9 +14,13 @@
 import atexit
 
 from contextlib import contextmanager
-from subprocess import PIPE
-from Queue import Empty
+from subprocess import PIPE, STDOUT
+try:
+    from queue import Empty  # Py 3
+except ImportError:
+    from Queue import Empty  # Py 2
 
+import nose
 import nose.tools as nt
 
 from IPython.kernel import KernelManager
@@ -36,10 +40,13 @@ KC = None
 #-------------------------------------------------------------------------------
 
 
-def start_new_kernel():
+def start_new_kernel(argv=None):
     """start a new kernel, and return its Manager and Client"""
     km = KernelManager()
-    km.start_kernel(stdout=PIPE, stderr=PIPE)
+    kwargs = dict(stdout=nose.iptest_stdstreams_fileno(), stderr=STDOUT)
+    if argv:
+        kwargs['extra_arguments'] = argv
+    km.start_kernel(**kwargs)
     kc = km.client()
     kc.start_channels()
     
@@ -123,7 +130,7 @@ def stop_global_kernel():
     KM = None
 
 @contextmanager
-def new_kernel():
+def new_kernel(argv=None):
     """Context manager for a new kernel in a subprocess
     
     Should only be used for tests where the kernel must not be re-used.
@@ -132,7 +139,7 @@ def new_kernel():
     -------
     kernel_client: connected KernelClient instance
     """
-    km, kc = start_new_kernel()
+    km, kc = start_new_kernel(argv)
     try:
         yield kc
     finally:
@@ -163,5 +170,10 @@ def assemble_output(iopub):
             pass
     return stdout, stderr
 
-
-
+def wait_for_idle(kc):
+    while True:
+        msg = kc.iopub_channel.get_msg(block=True, timeout=1)
+        msg_type = msg['msg_type']
+        content = msg['content']
+        if msg_type == 'status' and content['execution_state'] == 'idle':
+            break

@@ -51,10 +51,6 @@ if os.path.exists('MANIFEST'): os.remove('MANIFEST')
 
 from distutils.core import setup
 
-# On Python 3, we need distribute (new setuptools) to do the 2to3 conversion
-if PY3:
-    import setuptools
-
 # Our own imports
 from setupbase import target_update
 
@@ -62,7 +58,8 @@ from setupbase import (
     setup_args,
     find_packages,
     find_package_data,
-    find_scripts,
+    find_entry_points,
+    build_scripts_entrypt,
     find_data_files,
     check_for_dependencies,
     git_prebuild,
@@ -70,6 +67,12 @@ from setupbase import (
     update_submodules,
     require_submodules,
     UpdateSubmodules,
+    CompileCSS,
+    JavascriptVersion,
+    install_symlinked,
+    install_lib_symlink,
+    install_scripts_for_symlink,
+    unsymlink,
 )
 from setupext import setupext
 
@@ -150,7 +153,6 @@ require_clean_submodules()
 
 # update the manuals when building a source dist
 if len(sys.argv) >= 2 and sys.argv[1] in ('sdist','bdist_rpm'):
-    import textwrap
 
     # List of things to be updated. Each entry is a triplet of args for
     # target_update()
@@ -181,13 +183,6 @@ if len(sys.argv) >= 2 and sys.argv[1] in ('sdist','bdist_rpm'):
                   ['docs/man/ipython.1'],
                   'cd docs/man && gzip -9c ipython.1 > ipython.1.gz'),
 
-                 ('docs/man/irunner.1.gz',
-                  ['docs/man/irunner.1'],
-                  'cd docs/man && gzip -9c irunner.1 > irunner.1.gz'),
-
-                 ('docs/man/pycolor.1.gz',
-                  ['docs/man/pycolor.1'],
-                  'cd docs/man && gzip -9c pycolor.1 > pycolor.1.gz'),
                  ]
 
 
@@ -236,6 +231,12 @@ setup_args['cmdclass'] = {
     'sdist' : git_prebuild('IPython', sdist),
     'upload_wininst' : UploadWindowsInstallers,
     'submodule' : UpdateSubmodules,
+    'css' : CompileCSS,
+    'symlink': install_symlinked,
+    'install_lib_symlink': install_lib_symlink,
+    'install_scripts_sym': install_scripts_for_symlink,
+    'unsymlink': unsymlink,
+    'jsversion' : JavascriptVersion,
 }
 
 #---------------------------------------------------------------------------
@@ -268,14 +269,14 @@ if 'setuptools' in sys.modules:
     setup_args['cmdclass']['develop'] = require_submodules(develop)
     
     setuptools_extra_args['zip_safe'] = False
-    setuptools_extra_args['entry_points'] = find_scripts(True)
+    setuptools_extra_args['entry_points'] = {'console_scripts':find_entry_points()}
     setup_args['extras_require'] = dict(
         parallel = 'pyzmq>=2.1.11',
         qtconsole = ['pyzmq>=2.1.11', 'pygments'],
         zmq = 'pyzmq>=2.1.11',
-        doc = 'Sphinx>=0.3',
+        doc = ['Sphinx>=1.1', 'numpydoc'],
         test = 'nose>=0.10.1',
-        notebook = ['tornado>=2.0', 'pyzmq>=2.1.11', 'jinja2'],
+        notebook = ['tornado>=3.1', 'pyzmq>=2.1.11', 'jinja2'],
         nbconvert = ['pygments', 'jinja2', 'Sphinx>=0.3']
     )
     everything = set()
@@ -316,29 +317,15 @@ if 'setuptools' in sys.modules:
                                  {"install_script":
                                   "ipython_win_post_install.py"}}
 
-    if PY3:
-        setuptools_extra_args['use_2to3'] = True
-        # we try to make a 2.6, 2.7, and 3.1 to 3.3 python compatible code
-        # so we explicitly disable some 2to3 fixes to be sure we aren't forgetting
-        # anything.
-        setuptools_extra_args['use_2to3_exclude_fixers'] = [
-                'lib2to3.fixes.fix_apply',
-                'lib2to3.fixes.fix_except',
-                'lib2to3.fixes.fix_has_key',
-                'lib2to3.fixes.fix_next',
-                'lib2to3.fixes.fix_repr',
-                'lib2to3.fixes.fix_tuple_params',
-                ]
-        from setuptools.command.build_py import build_py
-        setup_args['cmdclass'] = {'build_py': git_prebuild('IPython', build_cmd=build_py)}
-        setuptools_extra_args['entry_points'] = find_scripts(True, suffix='3')
-        setuptools._dont_write_bytecode = True
 else:
     # If we are running without setuptools, call this function which will
     # check for dependencies an inform the user what is needed.  This is
     # just to make life easy for users.
     check_for_dependencies()
-    setup_args['scripts'] = find_scripts(False)
+    # scripts has to be a non-empty list, or install_scripts isn't called
+    setup_args['scripts'] = [e.split('=')[0].strip() for e in find_entry_points()]
+
+    setup_args['cmdclass']['build_scripts'] = build_scripts_entrypt
 
 #---------------------------------------------------------------------------
 # Do the actual setup now

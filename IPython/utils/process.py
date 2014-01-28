@@ -27,7 +27,8 @@ else:
     from ._process_posix import _find_cmd, system, getoutput, arg_split
 
 
-from ._process_common import getoutputerror, get_output_error_code
+from ._process_common import getoutputerror, get_output_error_code, process_handler
+from . import py3compat
 
 #-----------------------------------------------------------------------------
 # Code
@@ -105,7 +106,7 @@ def pycmd2argv(cmd):
 
 def abbrev_cwd():
     """ Return abbreviated version of cwd, e.g. d:mydir """
-    cwd = os.getcwdu().replace('\\','/')
+    cwd = py3compat.getcwd().replace('\\','/')
     drivepart = ''
     tail = cwd
     if sys.platform == 'win32':

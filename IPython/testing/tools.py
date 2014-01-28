@@ -18,7 +18,6 @@ from __future__ import absolute_import
 # Imports
 #-----------------------------------------------------------------------------
 
-import inspect
 import os
 import re
 import sys
@@ -60,17 +59,17 @@ def full_path(startPath,files):
     """Make full paths for all the listed files, based on startPath.
 
     Only the base part of startPath is kept, since this routine is typically
-    used with a script's __file__ variable as startPath.  The base of startPath
+    used with a script's ``__file__`` variable as startPath. The base of startPath
     is then prepended to all the listed files, forming the output list.
 
     Parameters
     ----------
-      startPath : string
-        Initial path to use as the base for the results.  This path is split
+    startPath : string
+      Initial path to use as the base for the results.  This path is split
       using os.path.split() and only its first component is kept.
 
-      files : string or list
-        One or more files.
+    files : string or list
+      One or more files.
 
     Examples
     --------
@@ -81,9 +80,10 @@ def full_path(startPath,files):
     >>> full_path('/foo',['a.txt','b.txt'])
     ['/a.txt', '/b.txt']
 
-    If a single file is given, the output is still a list:
-    >>> full_path('/foo','a.txt')
-    ['/a.txt']
+    If a single file is given, the output is still a list::
+
+        >>> full_path('/foo','a.txt')
+        ['/a.txt']
     """
 
     files = list_strings(files)
@@ -106,7 +106,8 @@ def parse_test_output(txt):
 
     Returns
     -------
-    nerr, nfail: number of errors and failures.
+    nerr, nfail
+      number of errors and failures.
     """
 
     err_m = re.search(r'^FAILED \(errors=(\d+)\)', txt, re.MULTILINE)
@@ -338,14 +339,16 @@ class AssertPrints(object):
     Examples
     --------
     >>> with AssertPrints("abc", suppress=False):
-    ...     print "abcd"
-    ...     print "def"
+    ...     print("abcd")
+    ...     print("def")
     ... 
     abcd
     def
     """
     def __init__(self, s, channel='stdout', suppress=True):
         self.s = s
+        if isinstance(self.s, py3compat.string_types):
+            self.s = [self.s]
         self.channel = channel
         self.suppress = suppress
     
@@ -356,10 +359,14 @@ class AssertPrints(object):
         setattr(sys, self.channel, self.buffer if self.suppress else self.tee)
     
     def __exit__(self, etype, value, traceback):
+        if value is not None:
+            # If an error was raised, don't check anything else
+            return False
         self.tee.flush()
         setattr(sys, self.channel, self.orig_stream)
         printed = self.buffer.getvalue()
-        assert self.s in printed, notprinted_msg.format(self.s, self.channel, printed)
+        for s in self.s:
+            assert s in printed, notprinted_msg.format(s, self.channel, printed)
         return False
 
 printed_msg = """Found {0!r} in printed output (on {1}):
@@ -373,10 +380,14 @@ class AssertNotPrints(AssertPrints):
     
     Counterpart of AssertPrints"""
     def __exit__(self, etype, value, traceback):
+        if value is not None:
+            # If an error was raised, don't check anything else
+            return False
         self.tee.flush()
         setattr(sys, self.channel, self.orig_stream)
         printed = self.buffer.getvalue()
-        assert self.s not in printed, printed_msg.format(self.s, self.channel, printed)
+        for s in self.s:
+            assert s not in printed, printed_msg.format(s, self.channel, printed)
         return False
 
 @contextmanager
@@ -414,7 +425,7 @@ def monkeypatch(obj, name, attr):
 
 def help_output_test(subcommand=''):
     """test that `ipython [subcommand] -h` works"""
-    cmd = ' '.join(get_ipython_cmd() + [subcommand, '-h'])
+    cmd = get_ipython_cmd() + [subcommand, '-h']
     out, err, rc = get_output_error_code(cmd)
     nt.assert_equal(rc, 0, err)
     nt.assert_not_in("Traceback", err)
@@ -425,7 +436,7 @@ def help_output_test(subcommand=''):
 
 def help_all_output_test(subcommand=''):
     """test that `ipython [subcommand] --help-all` works"""
-    cmd = ' '.join(get_ipython_cmd() + [subcommand, '--help-all'])
+    cmd = get_ipython_cmd() + [subcommand, '--help-all']
     out, err, rc = get_output_error_code(cmd)
     nt.assert_equal(rc, 0, err)
     nt.assert_not_in("Traceback", err)

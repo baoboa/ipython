@@ -1,4 +1,5 @@
 """toplevel setup/teardown for parallel tests."""
+from __future__ import print_function
 
 #-------------------------------------------------------------------------------
 #  Copyright (C) 2011  The IPython Development Team
@@ -14,7 +15,9 @@
 import os
 import tempfile
 import time
-from subprocess import Popen
+from subprocess import Popen, PIPE, STDOUT
+
+import nose
 
 from IPython.utils.path import get_ipython_dir
 from IPython.parallel import Client
@@ -34,8 +37,10 @@ class TestProcessLauncher(LocalProcessLauncher):
     """subclass LocalProcessLauncher, to prevent extra sockets and threads being created on Windows"""
     def start(self):
         if self.state == 'before':
+            # Store stdout & stderr to show with failing tests.
+            # This is defined in IPython.testing.iptest
             self.process = Popen(self.args,
-                stdout=blackhole, stderr=blackhole,
+                stdout=nose.iptest_stdstreams_fileno(), stderr=STDOUT,
                 env=os.environ,
                 cwd=self.work_dir
             )
@@ -57,7 +62,7 @@ def setup():
     
     cp = TestProcessLauncher()
     cp.cmd_and_args = ipcontroller_cmd_argv + \
-                ['--profile=iptest', '--log-level=50', '--ping=250', '--dictdb']
+                ['--profile=iptest', '--log-level=20', '--ping=250', '--dictdb']
     cp.start()
     launchers.append(cp)
     tic = time.time()
@@ -111,15 +116,15 @@ def teardown():
             try:
                 p.stop()
             except Exception as e:
-                print e
+                print(e)
                 pass
         if p.poll() is None:
             time.sleep(.25)
         if p.poll() is None:
             try:
-                print 'cleaning up test process...'
+                print('cleaning up test process...')
                 p.signal(SIGKILL)
             except:
-                print "couldn't shutdown process: ", p
+                print("couldn't shutdown process: ", p)
     blackhole.close()
     

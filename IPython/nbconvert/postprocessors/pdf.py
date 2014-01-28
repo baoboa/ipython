@@ -15,6 +15,7 @@ Contains writer for writing nbconvert output to PDF.
 
 import subprocess
 import os
+import sys
 
 from IPython.utils.traitlets import Integer, List, Bool
 
@@ -30,10 +31,10 @@ class PDFPostProcessor(PostProcessorBase):
         How many times pdflatex will be called.
         """)
 
-    latex_command = List(["pdflatex", "{filename}"], config=True, help="""
+    latex_command = List([u"pdflatex", u"{filename}"], config=True, help="""
         Shell command used to compile PDF.""")
 
-    bib_command = List(["bibtex", "{filename}"], config=True, help="""
+    bib_command = List([u"bibtex", u"{filename}"], config=True, help="""
         Shell command used to run bibtex.""")
 
     verbose = Bool(False, config=True, help="""
@@ -43,6 +44,9 @@ class PDFPostProcessor(PostProcessorBase):
     temp_file_exts = List(['.aux', '.bbl', '.blg', '.idx', '.log', '.out'], 
         config=True, help="""
         Filename extensions of temp files to remove after running.
+        """)
+    pdf_open = Bool(False, config=True, help="""
+        Whether or not to open the pdf after the compile call.
         """)
 
     def run_command(self, command_list, filename, count, log_function):
@@ -65,6 +69,13 @@ class PDFPostProcessor(PostProcessorBase):
             or failed (False).
         """
         command = [c.format(filename=filename) for c in command_list]
+        #In windows and python 2.x there is a bug in subprocess.Popen and
+        # unicode commands are not supported
+        if sys.platform == 'win32' and sys.version_info < (3,0):
+            #We must use cp1252 encoding for calling subprocess.Popen
+            #Note that sys.stdin.encoding and encoding.DEFAULT_ENCODING
+            # could be different (cp437 in case of dos console)
+            command = [c.encode('cp1252') for c in command]        
         times = 'time' if count == 1 else 'times'
         self.log.info("Running %s %i %s: %s", command_list[0], count, times, command)
         with open(os.devnull, 'rb') as null:
@@ -113,6 +124,16 @@ class PDFPostProcessor(PostProcessorBase):
             except OSError:
                 pass
 
+    def open_pdf(self, filename):
+        """Open the pdf in the default viewer."""
+        if sys.platform.startswith('darwin'):
+            subprocess.call(('open', filename))
+        elif os.name == 'nt':
+            os.startfile(filename)
+        elif os.name == 'posix':
+            subprocess.call(('xdg-open', filename))
+        return
+
     def postprocess(self, filename):
         """Build a PDF by running pdflatex and bibtex"""
         self.log.info("Building PDF")
@@ -128,5 +149,8 @@ class PDFPostProcessor(PostProcessorBase):
         filename = os.path.splitext(filename)[0]
         if os.path.isfile(filename+'.pdf'):
             self.log.info('PDF successfully created')
+            if self.pdf_open: 
+                self.log.info('Viewer called')
+                self.open_pdf(filename+'.pdf')
         return
-
+ 

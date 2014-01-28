@@ -55,7 +55,7 @@ import unittest
 from IPython.external.decorator import decorator
 
 # Expose the unittest-driven decorators
-from ipunittest import ipdoctest, ipdocstring
+from .ipunittest import ipdoctest, ipdocstring
 
 # Grab the numpy-specific decorators which we keep in a file that we
 # occasionally update from upstream: decorators.py is a copy of
@@ -64,6 +64,7 @@ from IPython.external.decorators import *
 
 # For onlyif_cmd_exists decorator
 from IPython.utils.process import is_cmd_found
+from IPython.utils.py3compat import string_types
 
 #-----------------------------------------------------------------------------
 # Classes and functions
@@ -141,7 +142,7 @@ def make_label_dec(label,ds=None):
     True
     """
 
-    if isinstance(label,basestring):
+    if isinstance(label, string_types):
         labels = [label]
     else:
         labels = label
@@ -174,20 +175,21 @@ def skipif(skip_condition, msg=None):
 
     Parameters
     ----------
-    skip_condition : bool or callable.
-        Flag to determine whether to skip test.  If the condition is a
-        callable, it is used at runtime to dynamically make the decision.  This
-        is useful for tests that may require costly imports, to delay the cost
-        until the test suite is actually executed.
-    msg : string
-        Message to give on raising a SkipTest exception
 
-   Returns
-   -------
-   decorator : function
-       Decorator, which, when applied to a function, causes SkipTest
-       to be raised when the skip_condition was True, and the function
-       to be called normally otherwise.
+    skip_condition : bool or callable
+      Flag to determine whether to skip test. If the condition is a
+      callable, it is used at runtime to dynamically make the decision. This
+      is useful for tests that may require costly imports, to delay the cost
+      until the test suite is actually executed.
+    msg : string
+      Message to give on raising a SkipTest exception.
+
+    Returns
+    -------
+    decorator : function
+      Decorator, which, when applied to a function, causes SkipTest
+      to be raised when the skip_condition was True, and the function
+      to be called normally otherwise.
 
     Notes
     -----
@@ -374,7 +376,7 @@ def onlyif_cmds_exist(*commands):
                             "is installed".format(cmd))
         except ImportError as e:
             # is_cmd_found uses pywin32 on windows, which might not be available
-            if sys.platform == 'win32' and 'pywin32' in e.message:
+            if sys.platform == 'win32' and 'pywin32' in str(e):
                 return skip("This test runs only if pywin32 and command '{0}' "
                             "is installed".format(cmd))
             raise e

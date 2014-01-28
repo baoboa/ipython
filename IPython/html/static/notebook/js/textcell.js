@@ -41,16 +41,16 @@ var IPython = (function (IPython) {
 
         // we cannot put this as a class key as it has handle to "this".
         var cm_overwrite_options  = {
-            onKeyEvent: $.proxy(this.handle_codemirror_keyevent,this)
+            onKeyEvent: $.proxy(this.handle_keyevent,this)
         };
 
         options = this.mergeopt(TextCell,options,{cm_config:cm_overwrite_options});
 
+        this.cell_type = this.cell_type || 'text';
+
         IPython.Cell.apply(this, [options]);
 
-
         this.rendered = false;
-        this.cell_type = this.cell_type || 'text';
     };
 
     TextCell.prototype = new IPython.Cell();
@@ -64,7 +64,6 @@ var IPython = (function (IPython) {
     };
 
 
-
     /**
      * Create the DOM element of the TextCell
      * @method create_element
@@ -72,19 +71,22 @@ var IPython = (function (IPython) {
      */
     TextCell.prototype.create_element = function () {
         IPython.Cell.prototype.create_element.apply(this, arguments);
+
         var cell = $("<div>").addClass('cell text_cell border-box-sizing');
         cell.attr('tabindex','2');
 
+        var prompt = $('<div/>').addClass('prompt input_prompt');
+        cell.append(prompt);
+        var inner_cell = $('<div/>').addClass('inner_cell');
         this.celltoolbar = new IPython.CellToolbar(this);
-        cell.append(this.celltoolbar.element);
-
+        inner_cell.append(this.celltoolbar.element);
         var input_area = $('<div/>').addClass('text_cell_input border-box-sizing');
         this.code_mirror = CodeMirror(input_area.get(0), this.cm_config);
-
         // The tabindex=-1 makes this div focusable.
         var render_area = $('<div/>').addClass('text_cell_render border-box-sizing').
             addClass('rendered_html').attr('tabindex','-1');
-        cell.append(input_area).append(render_area);
+        inner_cell.append(input_area).append(render_area);
+        cell.append(inner_cell);
         this.element = cell;
     };
 
@@ -98,17 +100,24 @@ var IPython = (function (IPython) {
     TextCell.prototype.bind_events = function () {
         IPython.Cell.prototype.bind_events.apply(this);
         var that = this;
-        this.element.keydown(function (event) {
-            if (event.which === 13 && !event.shiftKey) {
-                if (that.rendered) {
-                    that.edit();
-                    return false;
-                };
-            };
-        });
+
         this.element.dblclick(function () {
-            that.edit();
+            if (that.selected === false) {
+                $([IPython.events]).trigger('select.Cell', {'cell':that});
+            };
+            $([IPython.events]).trigger('edit_mode.Cell', {cell: that});
         });
+    };
+
+    TextCell.prototype.handle_keyevent = function (editor, event) {
+
+        // console.log('CM', this.mode, event.which, event.type)
+
+        if (this.mode === 'command') {
+            return true;
+        } else if (this.mode === 'edit') {
+            return this.handle_codemirror_keyevent(editor, event);
+        }
     };
 
     /**
@@ -123,65 +132,86 @@ var IPython = (function (IPython) {
      * @return {Boolean} `true` if CodeMirror should ignore the event, `false` Otherwise
      */
     TextCell.prototype.handle_codemirror_keyevent = function (editor, event) {
+        var that = this;
 
-        if (event.keyCode === 13 && (event.shiftKey || event.ctrlKey)) {
+        if (event.keyCode === 13 && (event.shiftKey || event.ctrlKey || event.altKey)) {
             // Always ignore shift-enter in CodeMirror as we handle it.
             return true;
+        } else if (event.which === key.UPARROW && event.type === 'keydown') {
+            // If we are not at the top, let CM handle the up arrow and
+            // prevent the global keydown handler from handling it.
+            if (!that.at_top()) {
+                event.stop();
+                return false;
+            } else {
+                return true;
+            };
+        } else if (event.which === key.DOWNARROW && event.type === 'keydown') {
+            // If we are not at the bottom, let CM handle the down arrow and
+            // prevent the global keydown handler from handling it.
+            if (!that.at_bottom()) {
+                event.stop();
+                return false;
+            } else {
+                return true;
+            };
+        } else if (event.which === key.ESC && event.type === 'keydown') {
+            if (that.code_mirror.options.keyMap === "vim-insert") {
+                // vim keyMap is active and in insert mode. In this case we leave vim
+                // insert mode, but remain in notebook edit mode.
+                // Let' CM handle this event and prevent global handling.
+                event.stop();
+                return false;
+            } else {
+                // vim keyMap is not active. Leave notebook edit mode.
+                // Don't let CM handle the event, defer to global handling.
+                return true;
+            }
         }
         return false;
     };
 
-    /**
-     * Select the current cell and trigger 'focus'
-     * @method select
-     */
+    // Cell level actions
+    
     TextCell.prototype.select = function () {
-        IPython.Cell.prototype.select.apply(this);
-        var output = this.element.find("div.text_cell_render");
-        output.trigger('focus');
+        var cont = IPython.Cell.prototype.select.apply(this);
+        if (cont) {
+            if (this.mode === 'edit') {
+                this.code_mirror.refresh();
+            }
+        };
+        return cont;
     };
 
-    /**
-     * unselect the current cell and `render` it
-     * @method unselect
-     */
-    TextCell.prototype.unselect = function() {
-        // render on selection of another cell
-        this.render();
-        IPython.Cell.prototype.unselect.apply(this);
-    };
-
-    /**
-     *
-     * put the current cell in edition mode
-     * @method edit
-     */
-    TextCell.prototype.edit = function () {
-        if (this.rendered === true) {
+    TextCell.prototype.unrender = function () {
+        if (this.read_only) return;
+        var cont = IPython.Cell.prototype.unrender.apply(this);
+        if (cont) {
             var text_cell = this.element;
             var output = text_cell.find("div.text_cell_render");
             output.hide();
             text_cell.find('div.text_cell_input').show();
-            this.code_mirror.refresh();
-            this.code_mirror.focus();
-            // We used to need an additional refresh() after the focus, but
-            // it appears that this has been fixed in CM. This bug would show
-            // up on FF when a newly loaded markdown cell was edited.
-            this.rendered = false;
             if (this.get_text() === this.placeholder) {
                 this.set_text('');
                 this.refresh();
             }
-        }
+
+        };
+        return cont;
     };
 
+    TextCell.prototype.execute = function () {
+        this.render();
+    };
 
-    /**
-     * Empty, Subclasses must define render.
-     * @method render
-     */
-    TextCell.prototype.render = function () {};
-
+    TextCell.prototype.edit_mode = function () {
+        var cont = IPython.Cell.prototype.edit_mode.apply(this);
+        if (cont) {
+            this.unrender();
+            this.focus_editor();
+        };
+        return cont;
+    }
 
     /**
      * setter: {{#crossLink "TextCell/set_text"}}{{/crossLink}}
@@ -219,36 +249,37 @@ var IPython = (function (IPython) {
     };
 
     /**
-     * not deprecated, but implementation wrong
      * @method at_top
-     * @deprecated
-     * @return {Boolean} true is cell rendered, false otherwise
-     * I doubt this is what it is supposed to do
-     * this implementation is completly false
+     * @return {Boolean}
      */
     TextCell.prototype.at_top = function () {
         if (this.rendered) {
             return true;
         } else {
-            return false;
-        }
+            var cursor = this.code_mirror.getCursor();
+            if (cursor.line === 0 && cursor.ch === 0) {
+                return true;
+            } else {
+                return false;
+            };
+        };
     };
 
-
     /**
-     * not deprecated, but implementation wrong
      * @method at_bottom
-     * @deprecated
-     * @return {Boolean} true is cell rendered, false otherwise
-     * I doubt this is what it is supposed to do
-     * this implementation is completly false
+     * @return {Boolean}
      * */
     TextCell.prototype.at_bottom = function () {
         if (this.rendered) {
             return true;
         } else {
-            return false;
-        }
+            var cursor = this.code_mirror.getCursor();
+            if (cursor.line === (this.code_mirror.lineCount()-1) && cursor.ch === this.code_mirror.getLine(cursor.line).length) {
+                return true;
+            } else {
+                return false;
+            };
+        };
     };
 
     /**
@@ -276,8 +307,10 @@ var IPython = (function (IPython) {
      */
     TextCell.prototype.toJSON = function () {
         var data = IPython.Cell.prototype.toJSON.apply(this);
-        data.cell_type = this.cell_type;
         data.source = this.get_text();
+        if (data.source == this.placeholder) {
+            data.source = "";
+        }
         return data;
     };
 
@@ -288,12 +321,10 @@ var IPython = (function (IPython) {
      * @extends IPython.HTMLCell
      */
     var MarkdownCell = function (options) {
-        var options = options || {};
-
-        options = this.mergeopt(MarkdownCell,options);
-        TextCell.apply(this, [options]);
+        options = this.mergeopt(MarkdownCell, options);
 
         this.cell_type = 'markdown';
+        TextCell.apply(this, [options]);
     };
 
     MarkdownCell.options_default = {
@@ -303,16 +334,14 @@ var IPython = (function (IPython) {
         placeholder: "Type *Markdown* and LaTeX: $\\alpha^2$"
     }
 
-
-
-
     MarkdownCell.prototype = new TextCell();
 
     /**
      * @method render
      */
     MarkdownCell.prototype.render = function () {
-        if (this.rendered === false) {
+        var cont = IPython.TextCell.prototype.render.apply(this);
+        if (cont) {
             var text = this.get_text();
             var math = null;
             if (text === "") { text = this.placeholder; }
@@ -335,8 +364,8 @@ var IPython = (function (IPython) {
             this.element.find('div.text_cell_input').hide();
             this.element.find("div.text_cell_render").show();
             this.typeset()
-            this.rendered = true;
-        }
+        };
+        return cont;
     };
 
 
@@ -351,22 +380,27 @@ var IPython = (function (IPython) {
 
         options = this.mergeopt(RawCell,options)
         TextCell.apply(this, [options]);
-
         this.cell_type = 'raw';
-
-        var that = this
-        this.element.focusout(
-                function() { that.auto_highlight(); }
-            );
+        // RawCell should always hide its rendered div
+        this.element.find('div.text_cell_render').hide();
     };
 
     RawCell.options_default = {
-        placeholder : "Type plain text and LaTeX: $\\alpha^2$"
+        placeholder : "Write raw LaTeX or other formats here, for use with nbconvert.\n" +
+            "It will not be rendered in the notebook.\n" + 
+            "When passing through nbconvert, a Raw Cell's content is added to the output unmodified."
     };
 
-
-
     RawCell.prototype = new TextCell();
+
+    /** @method bind_events **/
+    RawCell.prototype.bind_events = function () {
+        TextCell.prototype.bind_events.apply(this);
+        var that = this
+        this.element.focusout(function() {
+            that.auto_highlight();
+        });
+    };
 
     /**
      * Trigger autodetection of highlight scheme for current cell
@@ -378,63 +412,13 @@ var IPython = (function (IPython) {
 
     /** @method render **/
     RawCell.prototype.render = function () {
-        this.rendered = true;
-        this.edit();
-    };
-
-
-    /** @method handle_codemirror_keyevent **/
-    RawCell.prototype.handle_codemirror_keyevent = function (editor, event) {
-
-        var that = this;
-        if (event.which === key.UPARROW && event.type === 'keydown') {
-            // If we are not at the top, let CM handle the up arrow and
-            // prevent the global keydown handler from handling it.
-            if (!that.at_top()) {
-                event.stop();
-                return false;
-            } else {
-                return true;
-            };
-        } else if (event.which === key.DOWNARROW && event.type === 'keydown') {
-            // If we are not at the bottom, let CM handle the down arrow and
-            // prevent the global keydown handler from handling it.
-            if (!that.at_bottom()) {
-                event.stop();
-                return false;
-            } else {
-                return true;
-            };
-        };
-        return false;
-    };
-
-    /** @method select **/
-    RawCell.prototype.select = function () {
-        IPython.Cell.prototype.select.apply(this);
-        this.code_mirror.refresh();
-        this.code_mirror.focus();
-    };
-
-    /** @method at_top **/
-    RawCell.prototype.at_top = function () {
-        var cursor = this.code_mirror.getCursor();
-        if (cursor.line === 0 && cursor.ch === 0) {
-            return true;
-        } else {
-            return false;
+        // Make sure that this cell type can never be rendered
+        if (this.rendered) {
+            this.unrender();
         }
-    };
-
-
-    /** @method at_bottom **/
-    RawCell.prototype.at_bottom = function () {
-        var cursor = this.code_mirror.getCursor();
-        if (cursor.line === (this.code_mirror.lineCount()-1) && cursor.ch === this.code_mirror.getLine(cursor.line).length) {
-            return true;
-        } else {
-            return false;
-        }
+        var text = this.get_text();
+        if (text === "") { text = this.placeholder; }
+        this.set_text(text);
     };
 
 
@@ -448,16 +432,16 @@ var IPython = (function (IPython) {
      * @extends IPython.TextCell
      */
     var HeadingCell = function (options) {
+        options = this.mergeopt(HeadingCell, options);
 
-        options = this.mergeopt(HeadingCell,options)
+        this.level = 1;
+        this.cell_type = 'heading';
         TextCell.apply(this, [options]);
 
         /**
          * heading level of the cell, use getter and setter to access
          * @property level
          */
-        this.level = 1;
-        this.cell_type = 'heading';
     };
 
     HeadingCell.options_default = {
@@ -532,7 +516,8 @@ var IPython = (function (IPython) {
 
 
     HeadingCell.prototype.render = function () {
-        if (this.rendered === false) {
+        var cont = IPython.TextCell.prototype.render.apply(this);
+        if (cont) {
             var text = this.get_text();
             var math = null;
             // Markdown headings must be a single line
@@ -558,8 +543,9 @@ var IPython = (function (IPython) {
             this.typeset();
             this.element.find('div.text_cell_input').hide();
             this.element.find("div.text_cell_render").show();
-            this.rendered = true;
+
         };
+        return cont;
     };
 
     IPython.TextCell = TextCell;

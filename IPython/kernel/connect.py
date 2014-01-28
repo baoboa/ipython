@@ -36,9 +36,10 @@ from IPython.external.ssh import tunnel
 # IPython imports
 from IPython.config import Configurable
 from IPython.core.profiledir import ProfileDir
-from IPython.utils.localinterfaces import LOCALHOST
+from IPython.utils.localinterfaces import localhost
 from IPython.utils.path import filefind, get_ipython_dir
-from IPython.utils.py3compat import str_to_bytes, bytes_to_str
+from IPython.utils.py3compat import (str_to_bytes, bytes_to_str, cast_bytes_py2,
+                                     string_types)
 from IPython.utils.traitlets import (
     Bool, Integer, Unicode, CaselessStrEnum,
 )
@@ -49,7 +50,7 @@ from IPython.utils.traitlets import (
 #-----------------------------------------------------------------------------
 
 def write_connection_file(fname=None, shell_port=0, iopub_port=0, stdin_port=0, hb_port=0,
-                         control_port=0, ip=LOCALHOST, key=b'', transport='tcp',
+                         control_port=0, ip='', key=b'', transport='tcp',
                          signature_scheme='hmac-sha256',
                          ):
     """Generates a JSON config file, including the selection of random ports.
@@ -90,6 +91,8 @@ def write_connection_file(fname=None, shell_port=0, iopub_port=0, stdin_port=0, 
         and 'sha256' is the default hash function.
 
     """
+    if not ip:
+        ip = localhost()
     # default to temporary connector file
     if not fname:
         fname = tempfile.mktemp('.json')
@@ -345,7 +348,7 @@ def tunnel_to_kernel(connection_info, sshserver, sshkey=None):
     (shell, iopub, stdin, hb) : ints
         The four ports on localhost that have been forwarded to the kernel.
     """
-    if isinstance(connection_info, basestring):
+    if isinstance(connection_info, string_types):
         # it's a path, unpack it
         with open(connection_info) as f:
             connection_info = json.loads(f.read())
@@ -360,7 +363,7 @@ def tunnel_to_kernel(connection_info, sshserver, sshkey=None):
     if tunnel.try_passwordless_ssh(sshserver, sshkey):
         password=False
     else:
-        password = getpass("SSH Password for %s: "%sshserver)
+        password = getpass("SSH Password for %s: " % cast_bytes_py2(sshserver))
     
     for lp,rp in zip(lports, rports):
         tunnel.ssh_tunnel(lp, rp, sshserver, remote_ip, sshkey, password)
@@ -391,7 +394,7 @@ class ConnectionFileMixin(Configurable):
 
     transport = CaselessStrEnum(['tcp', 'ipc'], default_value='tcp', config=True)
 
-    ip = Unicode(LOCALHOST, config=True,
+    ip = Unicode(config=True,
         help="""Set the kernel\'s IP address [default localhost].
         If the IP address is something other than localhost, then
         Consoles on other machines will be able to connect
@@ -405,7 +408,7 @@ class ConnectionFileMixin(Configurable):
             else:
                 return 'kernel-ipc'
         else:
-            return LOCALHOST
+            return localhost()
 
     def _ip_changed(self, name, old, new):
         if new == '*':
@@ -516,7 +519,7 @@ class ConnectionFileMixin(Configurable):
         """Create a zmq Socket and connect it to the kernel."""
         url = self._make_url(channel)
         socket_type = channel_socket_types[channel]
-        self.log.info("Connecting to: %s" % url)
+        self.log.debug("Connecting to: %s" % url)
         sock = self.context.socket(socket_type)
         if identity:
             sock.identity = identity

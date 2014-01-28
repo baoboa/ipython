@@ -1,5 +1,5 @@
-"""This module defines Exporter, a highly configurable converter
-that uses Jinja2 to export notebook files into different formats.
+"""This module defines a base Exporter class. For Jinja template-based export,
+see templateexporter.py.
 """
 
 #-----------------------------------------------------------------------------
@@ -32,9 +32,6 @@ from IPython.utils.traitlets import MetaHasTraits, Unicode, List
 from IPython.utils.importstring import import_item
 from IPython.utils import text, py3compat
 
-from IPython.nbconvert import preprocessors as nbpreprocessors
-
-
 #-----------------------------------------------------------------------------
 # Class
 #-----------------------------------------------------------------------------
@@ -56,19 +53,24 @@ class Exporter(LoggingConfigurable):
         help="Extension of the file that should be written to disk"
         )
 
+    # MIME type of the result file, for HTTP response headers.
+    # This is *not* a traitlet, because we want to be able to access it from
+    # the class, not just on instances.
+    output_mimetype = ''
+
     #Configurability, allows the user to easily add filters and preprocessors.
     preprocessors = List(config=True,
         help="""List of preprocessors, by name or namespace, to enable.""")
 
     _preprocessors = None
 
-    default_preprocessors = List([nbpreprocessors.coalesce_streams,
-                                 nbpreprocessors.SVG2PDFPreprocessor,
-                                 nbpreprocessors.ExtractOutputPreprocessor,
-                                 nbpreprocessors.CSSHTMLHeaderPreprocessor,
-                                 nbpreprocessors.RevealHelpPreprocessor,
-                                 nbpreprocessors.LatexPreprocessor,
-                                 nbpreprocessors.SphinxPreprocessor],
+    default_preprocessors = List(['IPython.nbconvert.preprocessors.coalesce_streams',
+                                  'IPython.nbconvert.preprocessors.SVG2PDFPreprocessor',
+                                  'IPython.nbconvert.preprocessors.ExtractOutputPreprocessor',
+                                  'IPython.nbconvert.preprocessors.CSSHTMLHeaderPreprocessor',
+                                  'IPython.nbconvert.preprocessors.RevealHelpPreprocessor',
+                                  'IPython.nbconvert.preprocessors.LatexPreprocessor',
+                                  'IPython.nbconvert.preprocessors.HighlightMagicsPreprocessor'],
         config=True,
         help="""List of preprocessors available by default, by name, namespace, 
         instance, or type.""")
@@ -83,12 +85,12 @@ class Exporter(LoggingConfigurable):
         config : config
             User configuration instance.
         """
-        if not config:
-            config = self.default_config
+        with_default_config = self.default_config
+        if config:
+            with_default_config.merge(config)
+        
+        super(Exporter, self).__init__(config=with_default_config, **kw)
 
-        super(Exporter, self).__init__(config=config, **kw)
-
-        #Init
         self._init_preprocessors()
 
 
@@ -96,26 +98,20 @@ class Exporter(LoggingConfigurable):
     def default_config(self):
         return Config()
 
-    def _config_changed(self, name, old, new):
-        """When setting config, make sure to start with our default_config"""
-        c = self.default_config
-        if new:
-            c.merge(new)
-        if c != old:
-            self.config = c
-        super(Exporter, self)._config_changed(name, old, c)
-
-
+    @nbformat.docstring_nbformat_mod
     def from_notebook_node(self, nb, resources=None, **kw):
         """
         Convert a notebook from a notebook node instance.
 
         Parameters
         ----------
-        nb : Notebook node
-        resources : dict (**kw)
-            of additional resources that can be accessed read/write by
-            preprocessors.
+        nb : :class:`~{nbformat_mod}.nbbase.NotebookNode`
+          Notebook node
+        resources : dict
+          Additional resources that can be accessed read/write by
+          preprocessors and filters.
+        **kw
+          Ignored (?)
         """
         nb_copy = copy.deepcopy(nb)
         resources = self._init_resources(resources)
@@ -148,7 +144,7 @@ class Exporter(LoggingConfigurable):
         modified_date = datetime.datetime.fromtimestamp(os.path.getmtime(filename))
         resources['metadata']['modified_date'] = modified_date.strftime(text.date_format)
 
-        with io.open(filename) as f:
+        with io.open(filename, encoding='utf-8') as f:
             return self.from_notebook_node(nbformat.read(f, 'json'), resources=resources, **kw)
 
 
@@ -181,33 +177,33 @@ class Exporter(LoggingConfigurable):
         isclass = isinstance(preprocessor, type)
         constructed = not isclass
 
-        #Handle preprocessor's registration based on it's type
+        # Handle preprocessor's registration based on it's type
         if constructed and isinstance(preprocessor, py3compat.string_types):
-            #preprocessor is a string, import the namespace and recursively call
-            #this register_preprocessor method
+            # Preprocessor is a string, import the namespace and recursively call
+            # this register_preprocessor method
             preprocessor_cls = import_item(preprocessor)
             return self.register_preprocessor(preprocessor_cls, enabled)
 
         if constructed and hasattr(preprocessor, '__call__'):
-            #preprocessor is a function, no need to construct it.
-            #Register and return the preprocessor.
+            # Preprocessor is a function, no need to construct it.
+            # Register and return the preprocessor.
             if enabled:
                 preprocessor.enabled = True
             self._preprocessors.append(preprocessor)
             return preprocessor
 
         elif isclass and isinstance(preprocessor, MetaHasTraits):
-            #preprocessor is configurable.  Make sure to pass in new default for
-            #the enabled flag if one was specified.
+            # Preprocessor is configurable.  Make sure to pass in new default for 
+            # the enabled flag if one was specified.
             self.register_preprocessor(preprocessor(parent=self), enabled)
 
         elif isclass:
-            #preprocessor is not configurable, construct it
+            # Preprocessor is not configurable, construct it
             self.register_preprocessor(preprocessor(), enabled)
 
         else:
-            #preprocessor is an instance of something without a __call__
-            #attribute.
+            # Preprocessor is an instance of something without a __call__ 
+            # attribute.  
             raise TypeError('preprocessor')
 
 

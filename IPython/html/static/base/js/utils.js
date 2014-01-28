@@ -350,10 +350,35 @@ IPython.utils = (function (IPython) {
                 DOWN_ARROW: 40,
                 DOWNARROW: 40,
                 DOWN     : 40,
+                I        : 73,
+                M        : 77,
                 // all three of these keys may be COMMAND on OS X:
                 LEFT_SUPER : 91,
                 RIGHT_SUPER : 92,
                 COMMAND  : 93,
+    };
+    
+    // trigger a key press event
+    var press = function (key) {
+        var key_press =  $.Event('keydown', {which: key});
+        $(document).trigger(key_press);
+    }
+
+    var press_up = function() { press(keycodes.UP); };
+    var press_down = function() { press(keycodes.DOWN); };
+
+    var press_ctrl_enter = function() {
+        $(document).trigger($.Event('keydown', {which: keycodes.ENTER, ctrlKey: true}));
+    };
+
+    var press_shift_enter = function() {
+        $(document).trigger($.Event('keydown', {which: keycodes.ENTER, shiftKey: true}));
+    };
+
+    // trigger the ctrl-m shortcut followed by one of our keys
+    var press_ghetto = function(key) {
+        $(document).trigger($.Event('keydown', {which: keycodes.M, ctrlKey: true}));
+        press(key);
     };
 
 
@@ -365,9 +390,68 @@ IPython.utils = (function (IPython) {
         test.remove();
         return Math.floor(points*pixel_per_point);
     };
+    
+    var always_new = function (constructor) {
+        // wrapper around contructor to avoid requiring `var a = new constructor()`
+        // useful for passing constructors as callbacks,
+        // not for programmer laziness.
+        // from http://programmers.stackexchange.com/questions/118798
+        return function () {
+            var obj = Object.create(constructor.prototype);
+            constructor.apply(obj, arguments);
+            return obj;
+        };
+    };
+
+
+    var url_path_join = function () {
+        // join a sequence of url components with '/'
+        var url = '';
+        for (var i = 0; i < arguments.length; i++) {
+            if (arguments[i] === '') {
+                continue;
+            }
+            if (url.length > 0 && url[url.length-1] != '/') {
+                url = url + '/' + arguments[i];
+            } else {
+                url = url + arguments[i];
+            }
+        }
+        return url;
+    };
+    
+    
+    var encode_uri_components = function (uri) {
+        // encode just the components of a multi-segment uri,
+        // leaving '/' separators
+        return uri.split('/').map(encodeURIComponent).join('/');
+    }
+    
+    var url_join_encode = function () {
+        // join a sequence of url components with '/',
+        // encoding each component with encodeURIComponent
+        return encode_uri_components(url_path_join.apply(null, arguments));
+    };
+
+
+    var splitext = function (filename) {
+        // mimic Python os.path.splitext
+        // Returns ['base', '.ext']
+        var idx = filename.lastIndexOf('.');
+        if (idx > 0) {
+            return [filename.slice(0, idx), filename.slice(idx)];
+        } else {
+            return [filename, ''];
+        }
+    }
+
 
     // http://stackoverflow.com/questions/2400935/browser-detection-in-javascript
     var browser = (function() {
+        if (typeof navigator === 'undefined') {
+            // navigator undefined in node
+            return 'None';
+        }
         var N= navigator.appName, ua= navigator.userAgent, tem;
         var M= ua.match(/(opera|chrome|safari|firefox|msie)\/?\s*(\.?\d+(\.\d+)*)/i);
         if (M && (tem= ua.match(/version\/([\.\d]+)/i))!= null) M[2]= tem[1];
@@ -375,16 +459,49 @@ IPython.utils = (function (IPython) {
         return M;
     })();
 
+    var is_or_has = function (a, b) {
+        // Is b a child of a or a itself?
+        return a.has(b).length !==0 || a.is(b);
+    }
+
+    var is_focused = function (e) {
+        // Is element e, or one of its children focused?
+        e = $(e);
+        var target = $(document.activeElement);
+        if (target.length > 0) {
+            if (is_or_has(e, target)) {
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
 
     return {
         regex_split : regex_split,
         uuid : uuid,
         fixConsole : fixConsole,
         keycodes : keycodes,
+        press : press,
+        press_up : press_up,
+        press_down : press_down,
+        press_ctrl_enter : press_ctrl_enter,
+        press_shift_enter : press_shift_enter,
+        press_ghetto : press_ghetto,
         fixCarriageReturn : fixCarriageReturn,
         autoLinkUrls : autoLinkUrls,
         points_to_pixels : points_to_pixels,
-        browser : browser    
+        url_path_join : url_path_join,
+        url_join_encode : url_join_encode,
+        encode_uri_components : encode_uri_components,
+        splitext : splitext,
+        always_new : always_new,
+        browser : browser,
+        is_or_has : is_or_has,
+        is_focused : is_focused
     };
 
 }(IPython));
