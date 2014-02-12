@@ -31,6 +31,7 @@ var IPython = (function (IPython) {
         this.outputs = [];
         this.collapsed = false;
         this.scrolled = false;
+        this.trusted = true;
         this.clear_queued = null;
         if (prompt_area === undefined) {
             this.prompt_area = true;
@@ -41,7 +42,12 @@ var IPython = (function (IPython) {
         this.style();
         this.bind_events();
     };
-    
+
+
+    /**
+     * Class prototypes
+     **/
+
     OutputArea.prototype.create_elements = function () {
         this.element = $("<div/>");
         this.collapse_button = $("<div/>");
@@ -159,33 +165,6 @@ var IPython = (function (IPython) {
     };
 
     /**
-     * Threshold to trigger autoscroll when the OutputArea is resized,
-     * typically when new outputs are added.
-     *
-     * Behavior is undefined if autoscroll is lower than minimum_scroll_threshold,
-     * unless it is < 0, in which case autoscroll will never be triggered
-     *
-     * @property auto_scroll_threshold
-     * @type Number
-     * @default 100
-     *
-     **/
-    OutputArea.auto_scroll_threshold = 100;
-
-
-    /**
-     * Lower limit (in lines) for OutputArea to be made scrollable. OutputAreas
-     * shorter than this are never scrolled.
-     *
-     * @property minimum_scroll_threshold
-     * @type Number
-     * @default 20
-     *
-     **/
-    OutputArea.minimum_scroll_threshold = 20;
-
-
-    /**
      *
      * Scroll OutputArea if height supperior than a threshold (in lines).
      *
@@ -254,28 +233,7 @@ var IPython = (function (IPython) {
         }
         this.append_output(json);
     };
-
-    OutputArea.mime_map = {
-        "text/plain" : "text",
-        "text/html" : "html",
-        "image/svg+xml" : "svg",
-        "image/png" : "png",
-        "image/jpeg" : "jpeg",
-        "text/latex" : "latex",
-        "application/json" : "json",
-        "application/javascript" : "javascript",
-    };
     
-    OutputArea.mime_map_r = {
-        "text" : "text/plain",
-        "html" : "text/html",
-        "svg" : "image/svg+xml",
-        "png" : "image/png",
-        "jpeg" : "image/jpeg",
-        "latex" : "text/latex",
-        "json" : "application/json",
-        "javascript" : "application/javascript",
-    };
     
     OutputArea.prototype.rename_keys = function (data, key_map) {
         var remapped = {};
@@ -294,6 +252,7 @@ var IPython = (function (IPython) {
         'image/svg+xml',
         'image/png',
         'image/jpeg',
+        'application/pdf',
         'text/plain'
     ];
 
@@ -309,7 +268,7 @@ var IPython = (function (IPython) {
         });
         return json;
     };
-
+    
     OutputArea.prototype.append_output = function (json) {
         this.expand();
         // Clear the output if clear is queued.
@@ -331,6 +290,7 @@ var IPython = (function (IPython) {
         } else if (json.output_type === 'stream') {
             this.append_stream(json);
         }
+        
         this.outputs.push(json);
         
         // Only reset the height to automatic if the height is currently
@@ -516,24 +476,30 @@ var IPython = (function (IPython) {
         }
     };
 
-    OutputArea.display_order = [
-        'application/javascript',
-        'text/html',
-        'text/latex',
-        'image/svg+xml',
-        'image/png',
-        'image/jpeg',
-        'text/plain'
-    ];
 
+    OutputArea.safe_outputs = {
+        'text/plain' : true,
+        'image/png' : true,
+        'image/jpeg' : true
+    };
+    
     OutputArea.prototype.append_mime_type = function (json, element) {
-
         for (var type_i in OutputArea.display_order) {
             var type = OutputArea.display_order[type_i];
             var append = OutputArea.append_map[type];
             if ((json[type] !== undefined) && append) {
+                if (!this.trusted && !OutputArea.safe_outputs[type]) {
+                    // not trusted show warning and do not display
+                    var content = {
+                        text : "Untrusted " + type + " output ignored.",
+                        stream : "stderr"
+                    }
+                    this.append_stream(content);
+                    continue;
+                }
                 var md = json.metadata || {};
-                append.apply(this, [json[type], md, element]);
+                var toinsert = append.apply(this, [json[type], md, element]);
+                $([IPython.events]).trigger('output_appended.OutputArea', [type, json[type], md, toinsert]);
                 return true;
             }
         }
@@ -547,21 +513,28 @@ var IPython = (function (IPython) {
         IPython.keyboard_manager.register_events(toinsert);
         toinsert.append(html);
         element.append(toinsert);
+        return toinsert;
     };
 
 
-    OutputArea.prototype.append_javascript = function (js, md, container) {
+    OutputArea.prototype.append_javascript = function (js, md, element) {
         // We just eval the JS code, element appears in the local scope.
         var type = 'application/javascript';
-        var element = this.create_output_subarea(md, "output_javascript", type);
-        IPython.keyboard_manager.register_events(element);
-        container.append(element);
+        var toinsert = this.create_output_subarea(md, "output_javascript", type);
+        IPython.keyboard_manager.register_events(toinsert);
+        element.append(toinsert);
+        // FIXME TODO : remove `container element for 3.0` 
+        //backward compat, js should be eval'ed in a context where `container` is defined.
+        var container = element;
+        container.show = function(){console.log('Warning "container.show()" is deprecated.')};
+        // end backward compat
         try {
             eval(js);
         } catch(err) {
             console.log(err);
-            this._append_javascript_error(err, element);
+            this._append_javascript_error(err, toinsert);
         }
+        return toinsert;
     };
 
 
@@ -577,6 +550,7 @@ var IPython = (function (IPython) {
         }
         toinsert.append($("<pre/>").html(data));
         element.append(toinsert);
+        return toinsert;
     };
 
 
@@ -585,6 +559,7 @@ var IPython = (function (IPython) {
         var toinsert = this.create_output_subarea(md, "output_svg", type);
         toinsert.append(svg);
         element.append(toinsert);
+        return toinsert;
     };
 
 
@@ -613,22 +588,24 @@ var IPython = (function (IPython) {
             });
         }, 250);
     };
-
-
+    
+    var set_width_height = function (img, md, mime) {
+        // set width and height of an img element from metadata
+        var height = _get_metadata_key(md, 'height', mime);
+        if (height !== undefined) img.attr('height', height);
+        var width = _get_metadata_key(md, 'width', mime);
+        if (width !== undefined) img.attr('width', width);
+    };
+    
     OutputArea.prototype.append_png = function (png, md, element) {
         var type = 'image/png';
         var toinsert = this.create_output_subarea(md, "output_png", type);
-        var img = $("<img/>");
-        img[0].setAttribute('src','data:image/png;base64,'+png);
-        if (md['height']) {
-            img[0].setAttribute('height', md['height']);
-        }
-        if (md['width']) {
-            img[0].setAttribute('width', md['width']);
-        }
+        var img = $("<img/>").attr('src','data:image/png;base64,'+png);
+        set_width_height(img, md, 'image/png');
         this._dblclick_to_reset_size(img);
         toinsert.append(img);
         element.append(toinsert);
+        return toinsert;
     };
 
 
@@ -636,17 +613,24 @@ var IPython = (function (IPython) {
         var type = 'image/jpeg';
         var toinsert = this.create_output_subarea(md, "output_jpeg", type);
         var img = $("<img/>").attr('src','data:image/jpeg;base64,'+jpeg);
-        if (md['height']) {
-            img.attr('height', md['height']);
-        }
-        if (md['width']) {
-            img.attr('width', md['width']);
-        }
+        set_width_height(img, md, 'image/jpeg');
         this._dblclick_to_reset_size(img);
         toinsert.append(img);
         element.append(toinsert);
+        return toinsert;
     };
 
+
+    OutputArea.prototype.append_pdf = function (pdf, md, element) {
+        var type = 'application/pdf';
+        var toinsert = this.create_output_subarea(md, "output_pdf", type);
+        var a = $('<a/>').attr('href', 'data:application/pdf;base64,'+pdf);
+        a.attr('target', '_blank');
+        a.text('View PDF')
+        toinsert.append(a);
+        element.append(toinsert);
+        return toinsert;
+     }
 
     OutputArea.prototype.append_latex = function (latex, md, element) {
         // This method cannot do the typesetting because the latex first has to
@@ -655,18 +639,9 @@ var IPython = (function (IPython) {
         var toinsert = this.create_output_subarea(md, "output_latex", type);
         toinsert.append(latex);
         element.append(toinsert);
+        return toinsert;
     };
 
-    OutputArea.append_map = {
-        "text/plain" : OutputArea.prototype.append_text,
-        "text/html" : OutputArea.prototype.append_html,
-        "image/svg+xml" : OutputArea.prototype.append_svg,
-        "image/png" : OutputArea.prototype.append_png,
-        "image/jpeg" : OutputArea.prototype.append_jpeg,
-        "text/latex" : OutputArea.prototype.append_latex,
-        "application/json" : OutputArea.prototype.append_json,
-        "application/javascript" : OutputArea.prototype.append_javascript,
-    };
 
     OutputArea.prototype.append_raw_input = function (msg) {
         var that = this;
@@ -731,7 +706,12 @@ var IPython = (function (IPython) {
 
 
     OutputArea.prototype.handle_clear_output = function (msg) {
-        this.clear_output(msg.content.wait);
+        // msg spec v4 had stdout, stderr, display keys
+        // v4.1 replaced these with just wait
+        // The default behavior is the same (stdout=stderr=display=True, wait=False),
+        // so v4 messages will still be properly handled,
+        // except for the rarely used clearing less than all output.
+        this.clear_output(msg.content.wait || false);
     };
 
 
@@ -757,6 +737,7 @@ var IPython = (function (IPython) {
             // clear all, no need for logic
             this.element.html("");
             this.outputs = [];
+            this.trusted = true;
             this.unscroll_area();
             return;
         };
@@ -768,13 +749,6 @@ var IPython = (function (IPython) {
     OutputArea.prototype.fromJSON = function (outputs) {
         var len = outputs.length;
         var data;
-
-        // We don't want to display javascript on load, so remove it from the
-        // display order for the duration of this function call, but be sure to
-        // put it back in there so incoming messages that contain javascript
-        // representations get displayed
-        var js_index = OutputArea.display_order.indexOf('application/javascript');
-        OutputArea.display_order.splice(js_index, 1);
 
         for (var i=0; i<len; i++) {
             data = outputs[i];
@@ -788,9 +762,6 @@ var IPython = (function (IPython) {
             
             this.append_output(data);
         }
-
-        // reinsert javascript into display order, see note above
-        OutputArea.display_order.splice(js_index, 0, 'application/javascript');
     };
 
 
@@ -811,6 +782,83 @@ var IPython = (function (IPython) {
         return outputs;
     };
 
+    /**
+     * Class properties
+     **/
+
+    /**
+     * Threshold to trigger autoscroll when the OutputArea is resized,
+     * typically when new outputs are added.
+     *
+     * Behavior is undefined if autoscroll is lower than minimum_scroll_threshold,
+     * unless it is < 0, in which case autoscroll will never be triggered
+     *
+     * @property auto_scroll_threshold
+     * @type Number
+     * @default 100
+     *
+     **/
+    OutputArea.auto_scroll_threshold = 100;
+
+    /**
+     * Lower limit (in lines) for OutputArea to be made scrollable. OutputAreas
+     * shorter than this are never scrolled.
+     *
+     * @property minimum_scroll_threshold
+     * @type Number
+     * @default 20
+     *
+     **/
+    OutputArea.minimum_scroll_threshold = 20;
+
+
+
+    OutputArea.mime_map = {
+        "text/plain" : "text",
+        "text/html" : "html",
+        "image/svg+xml" : "svg",
+        "image/png" : "png",
+        "image/jpeg" : "jpeg",
+        "application/pdf" : "pdf",
+        "text/latex" : "latex",
+        "application/json" : "json",
+        "application/javascript" : "javascript",
+    };
+
+    OutputArea.mime_map_r = {
+        "text" : "text/plain",
+        "html" : "text/html",
+        "svg" : "image/svg+xml",
+        "png" : "image/png",
+        "jpeg" : "image/jpeg",
+        "pdf" : "application/pdf",
+        "latex" : "text/latex",
+        "json" : "application/json",
+        "javascript" : "application/javascript",
+    };
+
+    OutputArea.display_order = [
+        'application/javascript',
+        'text/html',
+        'text/latex',
+        'image/svg+xml',
+        'image/png',
+        'image/jpeg',
+        'application/pdf',
+        'text/plain'
+    ];
+
+    OutputArea.append_map = {
+        "text/plain" : OutputArea.prototype.append_text,
+        "text/html" : OutputArea.prototype.append_html,
+        "image/svg+xml" : OutputArea.prototype.append_svg,
+        "image/png" : OutputArea.prototype.append_png,
+        "image/jpeg" : OutputArea.prototype.append_jpeg,
+        "text/latex" : OutputArea.prototype.append_latex,
+        "application/json" : OutputArea.prototype.append_json,
+        "application/javascript" : OutputArea.prototype.append_javascript,
+        "application/pdf" : OutputArea.prototype.append_pdf
+    };
 
     IPython.OutputArea = OutputArea;
 

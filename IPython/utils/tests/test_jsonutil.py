@@ -69,10 +69,12 @@ def test_encode_images():
     # invalid data, but the header and footer are from real files
     pngdata = b'\x89PNG\r\n\x1a\nblahblahnotactuallyvalidIEND\xaeB`\x82'
     jpegdata = b'\xff\xd8\xff\xe0\x00\x10JFIFblahblahjpeg(\xa0\x0f\xff\xd9'
+    pdfdata = b'%PDF-1.\ntrailer<</Root<</Pages<</Kids[<</MediaBox[0 0 3 3]>>]>>>>>>'
     
     fmt = {
         'image/png'  : pngdata,
         'image/jpeg' : jpegdata,
+        'application/pdf' : pdfdata
     }
     encoded = encode_images(fmt)
     for key, value in iteritems(fmt):
@@ -94,8 +96,8 @@ def test_encode_images():
 
 def test_lambda():
     jc = json_clean(lambda : 1)
-    assert isinstance(jc, str)
-    assert '<lambda>' in jc
+    nt.assert_is_instance(jc, str)
+    nt.assert_in('<lambda>', jc)
     json.dumps(jc)
 
 def test_extract_dates():
@@ -118,16 +120,18 @@ def test_extract_dates():
         nt.assert_equal(dt, ref)
 
 def test_parse_ms_precision():
-    base = '2013-07-03T16:34:52.'
+    base = '2013-07-03T16:34:52'
     digits = '1234567890'
     
+    parsed = jsonutil.parse_date(base)
+    nt.assert_is_instance(parsed, datetime.datetime)
     for i in range(len(digits)):
-        ts = base + digits[:i]
+        ts = base + '.' + digits[:i]
         parsed = jsonutil.parse_date(ts)
         if i >= 1 and i <= 6:
-            assert isinstance(parsed, datetime.datetime)
+            nt.assert_is_instance(parsed, datetime.datetime)
         else:
-            assert isinstance(parsed, str)
+            nt.assert_is_instance(parsed, str)
 
 def test_date_default():
     data = dict(today=datetime.datetime.now(), utcnow=tz.utcnow())
@@ -136,7 +140,7 @@ def test_date_default():
     nt.assert_equal(jsondata.count("+00"), 1)
     extracted = jsonutil.extract_dates(json.loads(jsondata))
     for dt in extracted.values():
-        nt.assert_true(isinstance(dt, datetime.datetime))
+        nt.assert_is_instance(dt, datetime.datetime)
 
 def test_exception():
     bad_dicts = [{1:'number', '1':'string'},
